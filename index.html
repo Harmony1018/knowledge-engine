@@ -536,38 +536,54 @@ async function sbFetch(path,opt){
 
 async function save(items){
   _itemsCache=items;
+  try{localStorage.setItem(DBK,JSON.stringify(items))}catch(e){}
   try{
     await sbFetch('items?id=gte.0',{method:'DELETE',headers:SB_HDR});
     if(items.length)await sbFetch('items',{method:'POST',headers:SB_HDR,body:JSON.stringify(items.map(i=>({
       id:i.id,title:i.title,content:i.content,category:i.category||'未分类',summary:i.summary||'',
-      tags:JSON.stringify(i.tags||[]),image:i.image||null,related_ids:JSON.stringify(i.relatedIds||[]),
-      fingerprint:JSON.stringify(i.fingerprint||[]),created_at:i.createdAt||new Date().toISOString()
+      tags:i.tags||[],image:i.image||null,related_ids:i.relatedIds||[],
+      fingerprint:i.fingerprint||[],created_at:i.createdAt||new Date().toISOString()
     })))});
-  }catch(e){try{localStorage.setItem(DBK,JSON.stringify(items))}catch{}}
+  }catch(e){}
 }
 async function saveGalaxies(g){
   _galaxiesCache=g;
+  try{localStorage.setItem(GLK,JSON.stringify(g))}catch(e){}
   try{
     await sbFetch('galaxies?id=gte.0',{method:'DELETE',headers:SB_HDR});
     const e=Object.entries(g);
     if(e.length)await sbFetch('galaxies',{method:'POST',headers:SB_HDR,body:JSON.stringify(e.map(([cat,d])=>({category:cat,name:d.name||cat,ai_generated:d.aiGenerated||false})))});
-  }catch(e){try{localStorage.setItem(GLK,JSON.stringify(g))}catch{}}
+  }catch(e){}
 }
 
 async function initData(){
+  let fromSupabase = false;
   try{
     const [ir,gr]=await Promise.all([
       sbFetch('items?select=*',{headers:SB_HDR}).then(r=>r.json()),
       sbFetch('galaxies?select=*',{headers:SB_HDR}).then(r=>r.json())
     ]);
-    _itemsCache=ir.map(i=>({id:i.id,title:i.title,content:i.content,category:i.category,summary:i.summary,
-      tags:i.tags||[],image:i.image,relatedIds:i.related_ids||[],fingerprint:i.fingerprint||[],createdAt:i.created_at}));
-    const gs={};gr.forEach(r=>{gs[r.category]={name:r.name,aiGenerated:r.ai_generated}});_galaxiesCache=gs;
-  }catch(e){
+    if (ir && ir.length) {
+      _itemsCache=ir.map(i=>({
+        id:i.id,title:i.title,content:i.content,category:i.category,summary:i.summary,
+        tags:typeof i.tags==='string'?JSON.parse(i.tags):(i.tags||[]),
+        image:i.image,
+        relatedIds:typeof i.related_ids==='string'?JSON.parse(i.related_ids):(i.related_ids||[]),
+        fingerprint:typeof i.fingerprint==='string'?JSON.parse(i.fingerprint):(i.fingerprint||[]),
+        createdAt:i.created_at
+      }));
+      fromSupabase = true;
+    }
+    if (gr && gr.length) {
+      const gs={};gr.forEach(r=>{gs[r.category]={name:r.name,aiGenerated:r.ai_generated}});_galaxiesCache=gs;
+    }
+  }catch(e){}
+  // Supabase 没数据（RLS 限制或空库）→ 从 localStorage 恢复
+  if (!fromSupabase) {
     try{_itemsCache=JSON.parse(localStorage.getItem(DBK))||[]}catch{_itemsCache=[]}
     try{var v=localStorage.getItem(GLK);_galaxiesCache=v?JSON.parse(v):{}}catch{_galaxiesCache={}}
   }
-  // 空库时自动填充演示数据
+  // 仍为空则填充演示数据
   if(_itemsCache.length===0){
     _itemsCache=DEMO_ITEMS.map((d,i)=>({
       id:Date.now()+i*1000+Math.floor(Math.random()*999),
@@ -662,7 +678,7 @@ const DEMO_ITEMS = [
 
 // ===== AI 增强：自动分类 + 总结 + 关联 =====
 async function aiEnhance(item, allItems) {
-  const apiKey = loadAK() || 'sk-207863609b034ffaa562c29de535ffb4';
+  const apiKey = loadAK();
   if (!apiKey) return false;
 
   const existing = allItems
@@ -813,7 +829,7 @@ async function importUrl(){
 async function bulkImport(){
   const text=document.getElementById('ipt-bulk').value.trim();
   if(text.length<20){alert('请粘贴至少 20 个字符的内容');return}
-  const apiKey=loadAK()||'sk-207863609b034ffaa562c29de535ffb4';
+  const apiKey=loadAK();
   if(!apiKey){alert('请先在设置中配置 API Key');return}
   const st=document.getElementById('bulkStatus');
   st.textContent='⏳ AI 正在分析拆解...';
@@ -911,7 +927,7 @@ async function ask(){
   const ranked=items.map(i=>({item:i,score:rel(qFp,i.fingerprint)})).sort((a,b)=>b.score-a.score);
   const top=ranked.filter(r=>r.score>0).slice(0,5);
   const ctx=top.length?top.map((r,i)=>`[${i+1}]${r.item.title}\n${r.item.content?.slice(0,500)}`).join('\n\n'):items.slice(0,3).map(i=>`${i.title}\n${i.content?.slice(0,300)}`).join('\n\n');
-  const ak=loadAK()||'sk-207863609b034ffaa562c29de535ffb4';
+  const ak=loadAK();
   try{
     const res=await fetch('https://api.deepseek.com/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${ak}`},body:JSON.stringify({model:'deepseek-chat',messages:[{role:'system',content:`你是一个个人知识库助手。基于以下内容回答。不知道就说不知道。\n\n知识库：\n${ctx}`},{role:'user',content:q}],temperature:.6,max_tokens:1e3})});
     if(!res.ok){const e=await res.text();th.innerHTML=res.status===401?'API Key 无效，在设置中配置。':`API错误(${res.status})`;return}
