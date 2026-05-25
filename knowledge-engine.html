@@ -1,0 +1,1501 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>知识宇宙 · KNOWLEDGE NEBULA</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@300;400;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+
+:root {
+  --accent: #00ccff;
+  --accent-dim: rgba(0,200,255,0.08);
+  --accent-border: rgba(0,200,255,0.1);
+  --accent-border-focus: rgba(0,200,255,0.25);
+  --accent-text: rgba(0,200,255,0.4);
+  --accent-text-bright: rgba(0,200,255,0.6);
+}
+
+body {
+  font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;
+  background:#000; color:#fff; overflow:hidden;
+  height:100vh; width:100vw; user-select:none;
+}
+#scene-container { position:fixed; inset:0; z-index:0; }
+
+/* ===== 加载 ===== */
+#loading {
+  position:fixed; inset:0; z-index:100;
+  background:#000;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  transition:opacity 1.5s;
+}
+#loading.hidden { opacity:0; pointer-events:none; }
+.jarv-ring {
+  width:70px; height:70px; border:1.5px solid var(--accent-border);
+  border-radius:50%; position:relative; animation:jpulse 2.5s infinite;
+}
+.jarv-ring::before {
+  content:''; position:absolute; inset:-3px;
+  border:1px solid var(--accent-border); border-radius:50%;
+  animation:jpulse 2.5s infinite .6s;
+}
+.jarv-ring::after {
+  content:''; position:absolute; top:50%; left:50%;
+  width:3px; height:3px; background:var(--accent);
+  border-radius:50%; transform:translate(-50%,-50%);
+  box-shadow:0 0 15px var(--accent),0 0 30px var(--accent);
+}
+@keyframes jpulse {
+  0%{transform:scale(.8);opacity:.6}
+  100%{transform:scale(1.6);opacity:0}
+}
+#loading h1 {
+  font-family:'Orbitron',monospace; font-size:11px;
+  letter-spacing:8px; color:rgba(255,255,255,.5); margin-top:35px; font-weight:300;
+}
+
+/* ===== HUD ===== */
+#hud-top {
+  position:fixed; top:0; left:0; right:0; z-index:10;
+  padding:22px 30px; display:flex; justify-content:space-between; align-items:flex-start;
+  pointer-events:none;
+}
+#hud-top > * { pointer-events:auto; }
+.hud-title {
+  font-family:'Orbitron',monospace;
+  font-size:12px; letter-spacing:4px; color:rgba(255,255,255,.65); line-height:1.9;
+}
+.hud-title strong {
+  font-size:22px; color:#fff; display:block; letter-spacing:8px; font-weight:300;
+  text-shadow:0 0 40px rgba(255,255,255,.12);
+}
+.hud-title #hudStatus {
+  color:rgba(255,255,255,.55); font-size:11px;
+}
+.hud-stats {
+  text-align:right; font-size:13px; color:rgba(255,255,255,.55);
+  font-family:'Courier New',monospace; line-height:2; letter-spacing:1px;
+}
+
+/* ===== 星系选择器 ===== */
+#galaxyWrap {
+  display:flex; align-items:center; gap:6px; margin-top:8px;
+}
+#galaxySelector {
+  background:rgba(0,0,0,.6);
+  border:1px solid rgba(255,255,255,.12);
+  border-radius:4px;
+  color:rgba(255,255,255,.8);
+  font-size:11px;
+  padding:5px 8px;
+  font-family:'Courier New',monospace;
+  letter-spacing:1px;
+  cursor:pointer;
+  outline:none;
+  min-width:110px;
+}
+#galaxySelector option {
+  background:#0a0a0a;
+  color:rgba(255,255,255,.8);
+}
+#galaxySelector:focus {
+  border-color:var(--accent-border-focus);
+}
+#btnResetGalaxy {
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:3px;
+  color:rgba(255,255,255,.5);
+  font-size:10px;
+  width:22px;height:22px;
+  cursor:pointer;
+  display:none;
+  align-items:center;justify-content:center;
+  transition:.3s;
+}
+#btnResetGalaxy:hover {
+  background:rgba(255,255,255,.1);
+  color:rgba(255,255,255,.8);
+}
+#btnResetGalaxy.show { display:flex; }
+
+#hud-bottom {
+  position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+  z-index:5; font-family:'Courier New',monospace;
+  font-size:11px; color:rgba(255,255,255,.45); letter-spacing:2px; pointer-events:none;
+  white-space:nowrap;
+}
+
+/* ===== 工具栏 ===== */
+#toolbar {
+  position:fixed; right:22px; top:50%; transform:translateY(-50%);
+  z-index:10; display:flex; flex-direction:column; gap:10px;
+}
+#toolbar button {
+  position:relative;
+  width:50px; height:50px; border:1px solid rgba(255,255,255,.12);
+  border-radius:12px; background:rgba(0,0,0,.7);
+  backdrop-filter:blur(12px); color:rgba(255,255,255,.75);
+  font-size:22px; cursor:pointer; transition:all .3s;
+  display:flex; align-items:center; justify-content:center;
+}
+#toolbar button:hover {
+  background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.2);
+  color:#fff; box-shadow:0 0 25px var(--accent-dim);
+}
+#toolbar button .thint {
+  position:absolute; right:60px; font-size:11px; font-family:'Orbitron',monospace;
+  color:rgba(255,255,255,.65); white-space:nowrap; opacity:0; transition:opacity .3s;
+  letter-spacing:1px; background:rgba(0,0,0,.7); padding:6px 12px; border-radius:4px;
+  border:1px solid rgba(255,255,255,.06);
+  pointer-events:none;
+}
+#toolbar button:hover .thint { opacity:1; }
+
+/* ===== 面板 ===== */
+.panel {
+  position:fixed; right:-440px; top:0; width:420px; max-width:88vw;
+  height:100%; z-index:20;
+  transition:right .45s cubic-bezier(.22,1,.36,1);
+  background:rgba(0,0,0,.94); backdrop-filter:blur(40px);
+  border-left:1px solid rgba(255,255,255,.06);
+  padding:30px; overflow-y:auto;
+}
+.panel.open { right:0; }
+.panel .ph {
+  display:flex; justify-content:space-between; align-items:center;
+  margin-bottom:22px; padding-bottom:14px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.panel .ph h2 {
+  font-family:'Orbitron',monospace; font-size:14px; letter-spacing:4px;
+  color:rgba(255,255,255,.75); font-weight:300;
+}
+.panel .pc {
+  width:32px; height:32px; border:1px solid rgba(255,255,255,.08);
+  border-radius:6px; background:transparent; color:rgba(255,255,255,.55);
+  cursor:pointer; font-size:14px; transition:.3s;
+}
+.panel .pc:hover { background:rgba(255,255,255,.08); color:#fff; }
+.panel::-webkit-scrollbar { width:2px; }
+.panel::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:1px; }
+
+/* ===== 表单 ===== */
+.fg { margin-bottom:18px; }
+.fg label {
+  display:block; font-family:'Courier New',monospace;
+  font-size:11px; color:rgba(255,255,255,.6); margin-bottom:6px; letter-spacing:1px;
+}
+.fg input,.fg textarea {
+  width:100%; padding:12px 14px; background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08); border-radius:6px;
+  color:#fff; font-size:14px; outline:none; font-family:inherit;
+  transition:border .3s; resize:vertical;
+}
+.fg input:focus,.fg textarea:focus { border-color:var(--accent-border-focus); }
+.fg textarea { min-height:110px; }
+.btn-p {
+  width:100%; padding:14px; border:none; border-radius:6px;
+  background:var(--accent-dim); color:var(--accent-text-bright);
+  font-size:13px; cursor:pointer; transition:.3s;
+  letter-spacing:2px; font-family:'Orbitron',monospace;
+  border:1px solid var(--accent-border);
+}
+.btn-p:hover { background:var(--accent-dim); color:#fff; }
+.btn-p:disabled { opacity:.2; cursor:not-allowed; }
+.btn-d {
+  padding:5px 14px; border:1px solid rgba(255,70,70,.15); border-radius:4px;
+  background:transparent; color:rgba(255,70,70,.4); cursor:pointer;
+  font-size:11px; transition:.3s;
+}
+.btn-d:hover { background:rgba(255,70,70,.1); border-color:rgba(255,70,70,.3); color:rgba(255,70,70,.6); }
+
+/* ===== 图片上传 ===== */
+.img-upload-wrap {
+  display:flex; align-items:center; gap:10px;
+  padding:10px 14px; background:rgba(255,255,255,.02);
+  border:1px dashed rgba(255,255,255,.1); border-radius:6px;
+  cursor:pointer; transition:.3s;
+}
+.img-upload-wrap:hover { background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.15); }
+.img-upload-wrap span { font-size:13px; color:rgba(255,255,255,.3); }
+#imgPreview {
+  max-width:100%; max-height:120px; border-radius:4px; margin-top:8px; display:none;
+  border:1px solid rgba(255,255,255,.06);
+}
+#imgPreview.show { display:block; }
+#imgRemove {
+  font-size:10px; color:rgba(255,70,70,.4); cursor:pointer; margin-left:8px;
+  display:none;
+}
+#imgRemove.show { display:inline; }
+#imgRemove:hover { color:rgba(255,70,70,.6); }
+
+/* ===== 聊天 ===== */
+.chat-b {
+  height:320px; overflow-y:auto; margin-bottom:12px; padding:14px;
+  background:rgba(0,0,0,.4); border-radius:6px; display:flex;
+  flex-direction:column; gap:8px; border:1px solid rgba(255,255,255,.04);
+}
+.chat-m { padding:10px 16px; border-radius:6px; font-size:14px; line-height:1.7; max-width:90%; }
+.chat-m.u { background:var(--accent-dim); align-self:flex-end; border:1px solid var(--accent-border); }
+.chat-m.a { background:rgba(255,255,255,.03); align-self:flex-start; border:1px solid rgba(255,255,255,.04); }
+.chat-r { display:flex; gap:8px; }
+.chat-r input {
+  flex:1; padding:12px 14px; background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08); border-radius:5px;
+  color:#fff; font-size:14px; outline:none;
+}
+.chat-r input:focus { border-color:var(--accent-border-focus); }
+.chat-r button {
+  padding:12px 18px; border:1px solid rgba(255,255,255,.08); border-radius:5px;
+  background:rgba(255,255,255,.04); color:rgba(255,255,255,.4); cursor:pointer;
+}
+.chat-r button:hover { color:#fff; background:rgba(255,255,255,.08); }
+
+/* ===== 列表 ===== */
+.kl { display:flex; flex-direction:column; gap:6px; }
+.kc {
+  padding:14px 18px; border:1px solid rgba(255,255,255,.04);
+  border-radius:8px; background:rgba(255,255,255,.015); cursor:pointer;
+  transition:all .3s;
+}
+.kc:hover { background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.1); }
+.kc h3 { font-size:16px; font-weight:400; color:rgba(255,255,255,.82); margin-bottom:3px; }
+.kc .kp { font-size:12px; color:rgba(255,255,255,.45); }
+.kc .kd { float:right; }
+.kc .kcat { display:inline-block; font-size:10px; padding:2px 8px; border-radius:3px; background:var(--accent-dim); color:var(--accent-text); margin-left:8px; letter-spacing:1px; }
+.empty { text-align:center; padding:40px 20px; color:rgba(255,255,255,.4); }
+.empty .ei { font-size:34px; margin-bottom:8px; opacity:.2; }
+.empty p { font-size:13px; }
+
+/* ===== 弹窗（保留未用） ===== */
+.mb {
+  position:fixed; inset:0; background:rgba(0,0,0,.5);
+  z-index:45; opacity:0; pointer-events:none; transition:opacity .4s;
+}
+.mb.o { opacity:1; pointer-events:all; }
+.modal {
+  position:fixed; top:50%; left:50%;
+  transform:translate(-50%,-50%) scale(.92);
+  width:540px; max-width:85vw; max-height:72vh;
+  background:rgba(0,0,0,.96); backdrop-filter:blur(30px);
+  border:1px solid rgba(255,255,255,.08); border-radius:14px;
+  padding:32px; z-index:50; overflow-y:auto;
+  opacity:0; pointer-events:none; transition:all .4s;
+}
+.modal.o { opacity:1; pointer-events:all; transform:translate(-50%,-50%) scale(1); }
+.modal h2 { font-size:20px; font-weight:400; margin-bottom:14px; color:rgba(255,255,255,.85); }
+.modal .mc { font-size:15px; line-height:1.9; color:rgba(255,255,255,.7); white-space:pre-wrap; }
+.modal .mc img { max-width:100%; border-radius:6px; margin:10px 0; border:1px solid rgba(255,255,255,.05); }
+.modal .mc .msum { font-size:13px; color:var(--accent-text); margin-bottom:10px; padding:8px 14px; background:var(--accent-dim); border-radius:4px; border-left:2px solid var(--accent-border); }
+.modal .mc2 { position:absolute; top:16px; right:16px; width:30px; height:30px; border:1px solid rgba(255,255,255,.08); border-radius:6px; background:transparent; color:rgba(255,255,255,.3); cursor:pointer; font-size:13px; }
+.modal::-webkit-scrollbar { width:2px; }
+.modal::-webkit-scrollbar-thumb { background:rgba(255,255,255,.1); border-radius:1px; }
+
+/* ===== 详情面板 ===== */
+.dt-cat {
+  display:inline-block; padding:4px 12px;
+  border-radius:4px; font-size:11px;
+  letter-spacing:2px; margin-bottom:14px;
+  font-family:'Courier New',monospace;
+  background:var(--accent-dim);
+  color:var(--accent-text-bright);
+  border:1px solid var(--accent-border);
+  font-weight:500;
+}
+.dt-title {
+  font-size:22px; font-weight:400;
+  color:rgba(255,255,255,.93); margin-bottom:16px;
+  line-height:1.5;
+}
+.dt-sum {
+  font-size:13px; color:var(--accent-text);
+  padding:12px 16px; background:var(--accent-dim);
+  border-radius:6px; margin-bottom:18px;
+  border-left:2px solid var(--accent-border);
+  line-height:1.7;
+}
+.dt-content {
+  font-size:14px; line-height:1.9;
+  color:rgba(255,255,255,.75); white-space:pre-wrap;
+  margin-bottom:18px;
+}
+.dt-img { margin-bottom:18px; }
+.dt-img img {
+  max-width:100%; border-radius:6px;
+  border:1px solid rgba(255,255,255,.06);
+}
+.dt-tags {
+  display:flex; flex-wrap:wrap; gap:6px;
+  margin-bottom:18px;
+}
+.dt-tag {
+  padding:4px 10px; font-size:11px;
+  border-radius:3px; background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.06);
+  color:rgba(255,255,255,.6);
+  letter-spacing:1px;
+}
+.dt-related { margin-bottom:18px; }
+.dt-related h4 {
+  font-size:11px; font-family:'Orbitron',monospace;
+  color:rgba(255,255,255,.25); margin-bottom:10px;
+  letter-spacing:2px; padding-bottom:6px;
+  border-bottom:1px solid rgba(255,255,255,.04);
+}
+.dt-related-item {
+  padding:10px 14px; cursor:pointer;
+  border:1px solid rgba(255,255,255,.04);
+  border-radius:5px; margin-bottom:4px;
+  font-size:13px; color:var(--accent-text-bright);
+  transition:all .3s;
+}
+.dt-related-item:hover {
+  background:var(--accent-dim);
+  border-color:var(--accent-border);
+  color:#fff;
+}
+
+/* ===== 设置 ===== */
+.sr { display:flex; justify-content:space-between; align-items:center; padding:12px 0; border-bottom:1px solid rgba(255,255,255,.04); }
+.sr label { font-size:13px; color:rgba(255,255,255,.7); }
+.sr input[type="text"], .sr input[type="password"] { width:200px; padding:7px 10px; background:rgba(255,255,255,.03); border:1px solid rgba(255,255,255,.07); border-radius:4px; color:#fff; font-size:12px; outline:none; }
+.sr input:focus { border-color:var(--accent-border-focus); }
+.sr input[type="color"] { width:44px; height:34px; padding:2px; border:1px solid rgba(255,255,255,.15); border-radius:4px; background:transparent; cursor:pointer; }
+.sr .cval { font-size:11px; font-family:'Courier New',monospace; color:rgba(255,255,255,.2); }
+
+/* ===== 空状态引导 ===== */
+#emptyHint {
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  z-index:3; text-align:center; pointer-events:none;
+  font-family:'Orbitron',monospace; transition:opacity .8s;
+}
+#emptyHint.hidden { opacity:0; }
+#emptyHint .ei2 { font-size:44px; color:rgba(255,255,255,.06); margin-bottom:12px; }
+#emptyHint p { font-size:12px; letter-spacing:3px; color:rgba(255,255,255,.12); line-height:2; }
+
+/* ===== 分类标签 ===== */
+#scene-labels {
+  position:fixed; inset:0; z-index:1; pointer-events:none;
+  overflow:hidden;
+}
+.slabel {
+  position:absolute; font-family:'Orbitron',monospace;
+  font-size:11px; letter-spacing:2px; color:rgba(255,255,255,.4);
+  transform:translate(-50%,-50%); transition:opacity .8s;
+  text-shadow:0 0 20px var(--accent-border);
+}
+
+/* ===== AI 分析指示器 ===== */
+#aiIndicator {
+  position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  z-index:30; display:none; flex-direction:column; align-items:center; gap:10px;
+  background:rgba(0,0,0,.8); padding:20px 30px; border-radius:10px;
+  border:1px solid var(--accent-border);
+}
+#aiIndicator.show { display:flex; }
+#aiIndicator .spin { width:24px; height:24px; border:1.5px solid var(--accent-border); border-top-color:var(--accent); border-radius:50%; animation:aspin .8s linear infinite; }
+@keyframes aspin { to{transform:rotate(360deg)} }
+#aiIndicator p { font-size:12px; color:rgba(255,255,255,.35); font-family:'Orbitron',monospace; letter-spacing:2px; }
+
+/* ===== 响应式 ===== */
+@media(max-width:640px){
+  .panel{width:100vw;right:-100vw}
+  .panel.open{right:0}
+  #toolbar{right:10px}
+  #toolbar button{width:44px;height:44px;font-size:20px}
+  .hud-title strong{font-size:18px}
+  #galaxySelector{font-size:10px;min-width:90px}
+  #hud-bottom{font-size:9px}
+}
+</style>
+</head>
+<body>
+
+<div id="loading"><div class="jarv-ring"></div><h1>INITIALIZING</h1></div>
+<script>setTimeout(function(){var l=document.getElementById('loading');if(l)l.classList.add('hidden')},5000);</script>
+<div id="scene-container"></div>
+<div id="scene-labels"></div>
+<div id="aiIndicator"><div class="spin"></div><p>AI 分析中...</p></div>
+
+<div id="emptyHint" class="hidden">
+  <div class="ei2">◈</div>
+  <p>点击右侧 ＋ 添加第一条知识</p>
+</div>
+
+<div id="hud-top">
+  <div class="hud-title">
+    <strong>KNOWLEDGE NEBULA</strong>
+    <span id="hudStatus">INITIALIZING...</span>
+    <div id="galaxyWrap">
+      <select id="galaxySelector">
+        <option value="__all__">⟐ 全域</option>
+      </select>
+      <button id="btnResetGalaxy" onclick="resetCamera()">✕</button>
+    </div>
+  </div>
+  <div class="hud-stats"><div id="hudNodes">NODES: 0</div><div id="hudLinks">LINKS: 0</div></div>
+</div>
+<div id="hud-bottom">⟐ 左键旋转 · Shift+左键平移 · 滚轮缩放 · 触屏双指平移 ⟐</div>
+
+<div id="toolbar">
+  <button onclick="openP('add')">＋<span class="thint">ADD</span></button>
+  <button onclick="openP('ask')">？<span class="thint">ASK</span></button>
+  <button onclick="openP('list')">≡<span class="thint">LIST</span></button>
+  <button onclick="openP('settings')">⚙<span class="thint">SET</span></button>
+</div>
+
+<div class="panel" id="p-add">
+  <div class="ph"><h2>／ADD NODE</h2><button class="pc" onclick="closeP('add')">✕</button></div>
+  <div class="fg"><label>TITLE</label><input id="ipt-title" placeholder="给这段知识命名"></div>
+  <div class="fg"><label>CONTENT</label><textarea id="ipt-content" placeholder="写下知识内容…"></textarea></div>
+  <div class="fg"><label>IMAGE（选填）</label>
+    <div class="img-upload-wrap" onclick="document.getElementById('imgInput').click()">
+      <span>＋ 选择图片</span>
+    </div>
+    <input type="file" id="imgInput" accept="image/*" style="display:none" onchange="handleImage(this)">
+    <div style="position:relative;display:inline-block">
+      <img id="imgPreview"><span id="imgRemove" onclick="removeImage()">✕ 移除</span>
+    </div>
+  </div>
+  <div class="fg"><label>TAGS（逗号分隔）</label><input id="ipt-tags" placeholder="AI, 编程, 设计"></div>
+
+  <div style="margin:14px 0;border-top:1px solid rgba(255,255,255,.06);padding-top:16px">
+    <div class="fg"><label>🔗 一键导入链接</label>
+      <div style="display:flex;gap:8px">
+        <input id="ipt-import-url" placeholder="粘贴网页链接…" style="flex:1">
+        <button onclick="importUrl()" style="padding:0 18px;border:1px solid rgba(255,255,255,.1);border-radius:6px;background:rgba(0,0,0,.5);color:rgba(255,255,255,.5);cursor:pointer;white-space:nowrap;font-size:13px">导入</button>
+      </div>
+      <div id="importUrlStatus" style="font-size:11px;color:rgba(255,255,255,.25);margin-top:6px"></div>
+    </div>
+    <div class="fg"><label>📝 AI 批量导入（粘贴对话/笔记/文章）</label>
+      <textarea id="ipt-bulk" placeholder="粘贴 AI 对话记录、读书笔记、长文章…&#10;AI 会自动拆分为多条知识并逐条入库" style="min-height:100px"></textarea>
+      <div id="bulkStatus" style="font-size:11px;color:rgba(255,255,255,.25);margin:6px 0"></div>
+      <button class="btn-p" onclick="bulkImport()" style="margin-top:0">AI 智能拆解 → 批量入库</button>
+    </div>
+  </div>
+
+  <button class="btn-p" onclick="addItem()">存入知识宇宙</button>
+</div>
+
+<div class="panel" id="p-ask">
+  <div class="ph"><h2>／AI QUERY</h2><button class="pc" onclick="closeP('ask')">✕</button></div>
+  <div class="chat-b" id="chatB"><div class="chat-m a">System online. 问我知识库的问题。</div></div>
+  <div class="chat-r"><input id="chatIn" placeholder="输入问题…" onkeydown="if(event.key==='Enter') ask()"><button onclick="ask()">↵</button></div>
+</div>
+
+<div class="panel" id="p-list">
+  <div class="ph"><h2>／NODE LIST</h2><button class="pc" onclick="closeP('list')">✕</button></div>
+  <div id="listC"><div class="empty"><div class="ei">◈</div><p>空。点击 ＋ 添加第一条知识。</p></div></div>
+</div>
+
+<div class="panel" id="p-detail">
+  <div class="ph"><h2>／DETAIL</h2><button class="pc" onclick="closeP('detail')">✕</button></div>
+  <div id="detailCategory" class="dt-cat"></div>
+  <div id="detailTitle" class="dt-title"></div>
+  <div id="detailSummary" class="dt-sum"></div>
+  <div id="detailImage" class="dt-img"></div>
+  <div id="detailContent" class="dt-content"></div>
+  <div id="detailTags" class="dt-tags"></div>
+  <div id="detailRelated" class="dt-related"></div>
+</div>
+
+<div class="panel" id="p-settings">
+  <div class="ph"><h2>／SETTINGS</h2><button class="pc" onclick="closeP('settings')">✕</button></div>
+  <div class="sr"><label>DeepSeek API Key</label><input id="ipt-apikey" type="password" placeholder="sk-..."></div>
+  <div class="sr"><label>星球颜色</label><div><input id="ipt-sphere-color" type="color"><span class="cval" id="sphereColorVal">#00ccff</span></div></div>
+  <div class="sr"><label>界面强调色</label><div><input id="ipt-ui-color" type="color"><span class="cval" id="uiColorVal">#00ccff</span></div></div>
+  <div class="sr"><label>节点数量</label><span id="setCount" style="font-size:12px;color:rgba(255,255,255,.2)">0</span></div>
+  <div style="margin-top:18px;"><button class="btn-d" onclick="if(confirm('清除所有知识？')){clearAll()}">清除所有数据</button></div>
+  <div style="margin-top:12px;font-size:10px;color:rgba(255,255,255,.1)">数据存储在云端，多设备自动同步。</div>
+</div>
+
+<div class="mb" id="modalBg" onclick="closeM()"></div>
+<div class="modal" id="modal"><button class="mc2" onclick="closeM()">✕</button><h2 id="modalT"></h2><div class="mc" id="modalC"><div class="msum" id="modalSum"></div><div id="modalImg"></div><div id="modalContent"></div></div></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script>
+// ===== 云数据层（API + 内存缓存，失败回退 localStorage）=====
+const DBK='knowledge_nebula_data',AKK='knowledge_nebula_apikey',THK='knowledge_nebula_theme',GLK='knowledge_nebula_galaxies';
+let _itemsCache=[];
+let _galaxiesCache={};
+
+function load(){return _itemsCache}
+function loadGalaxies(){return _galaxiesCache}
+
+async function save(items){
+  _itemsCache=items;
+  try{await fetch('/api/items/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(items)})}
+  catch(e){try{localStorage.setItem(DBK,JSON.stringify(items))}catch{}}
+}
+async function saveGalaxies(g){
+  _galaxiesCache=g;
+  try{await fetch('/api/galaxies',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(g)})}
+  catch(e){try{localStorage.setItem(GLK,JSON.stringify(g))}catch{}}
+}
+
+async function initData(){
+  try{
+    const [ir,gr]=await Promise.all([fetch('/api/items'),fetch('/api/galaxies')]);
+    _itemsCache=await ir.json();
+    _galaxiesCache=await gr.json();
+  }catch(e){
+    try{_itemsCache=JSON.parse(localStorage.getItem(DBK))||[]}catch{_itemsCache=[]}
+    try{var v=localStorage.getItem(GLK);_galaxiesCache=v?JSON.parse(v):{}}catch{_galaxiesCache={}}
+  }
+  // 空库时自动填充演示数据
+  if(_itemsCache.length===0){
+    _itemsCache=DEMO_ITEMS.map((d,i)=>({
+      id:Date.now()+i*1000+Math.floor(Math.random()*999),
+      title:d.title,content:d.content,category:d.category,summary:d.summary,
+      tags:d.tags,image:null,relatedIds:[],
+      fingerprint:extFP(d.title+' '+d.content),
+      createdAt:new Date().toISOString()
+    }));
+    save(_itemsCache);
+  }
+}
+
+function loadAK(){return localStorage.getItem(AKK)||''}
+function saveAK(k){localStorage.setItem(AKK,k)}
+
+// ===== 主题存储（设备本地）=====
+function loadTheme(){try{var v=localStorage.getItem(THK);return v?JSON.parse(v):{}}catch{return{}}}
+function saveTheme(t){try{localStorage.setItem(THK,JSON.stringify(t))}catch{}}
+function getTheme(key,def){try{var t=loadTheme();return t&&t[key]!==undefined?t[key]:def}catch{return def}}
+function setTheme(key,val){try{var t=loadTheme();if(t){t[key]=val;saveTheme(t)}}catch{}}
+
+function getGalaxyName(cat){var g=_galaxiesCache;return g[cat]&&g[cat].name?g[cat].name:null}
+function setGalaxyName(cat,name){var g=_galaxiesCache;g[cat]=g[cat]||{};g[cat].name=name;saveGalaxies(g)}
+
+function hexToHue(hex){
+  if(!hex||hex.length<7)return 190;
+  const r=parseInt(hex.slice(1,3),16)/255,g=parseInt(hex.slice(3,5),16)/255,b=parseInt(hex.slice(5,7),16)/255;
+  const max=Math.max(r,g,b),min=Math.min(r,g,b);
+  if(max===min)return 190;
+  const d=max-min;let h;
+  if(max===r)h=(g-b)/d+(g<b?6:0);else if(max===g)h=(b-r)/d+2;else h=(r-g)/d+4;
+  return Math.round(h*60);
+}
+
+function applyUITheme(hex){
+  if(!hex||hex.length<7)hex='#00ccff';
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  const root=document.documentElement;
+  root.style.setProperty('--accent',hex);
+  root.style.setProperty('--accent-dim',`rgba(${r},${g},${b},0.08)`);
+  root.style.setProperty('--accent-border',`rgba(${r},${g},${b},0.1)`);
+  root.style.setProperty('--accent-border-focus',`rgba(${r},${g},${b},0.25)`);
+  root.style.setProperty('--accent-text',`rgba(${r},${g},${b},0.4)`);
+  root.style.setProperty('--accent-text-bright',`rgba(${r},${g},${b},0.6)`);
+}
+
+// 兼容旧数据
+function migrate(item){
+  if(!item.category)item.category='未分类';
+  if(!item.summary)item.summary='';
+  if(!item.relatedIds)item.relatedIds=[];
+  if(!item.image)item.image=null;
+  if(!item.fingerprint||!Array.isArray(item.fingerprint)||!item.fingerprint.length)
+    item.fingerprint=extFP((item.title||'')+' '+(item.content||''));
+  return item;
+}
+
+// ===== 指纹 & 相似度 =====
+function extFP(text){
+  const t=text.toLowerCase(),sig=new Set();
+  const cn=t.replace(/[^一-鿿]/g,'');
+  for(let i=0;i<cn.length-1;i++) sig.add(cn.slice(i,i+2));
+  (t.match(/[a-z][a-z0-9+#.-]{2,}/g)||[]).forEach(w=>sig.add(w));
+  t.split(/[，。！？、；：""''（）\[\]【】{}《》\s]+/).forEach(s=>{const tr=s.trim();if(tr.length>=2&&tr.length<=8)sig.add(tr)});
+  return [...sig].slice(0,25);
+}
+function rel(fp1,fp2){
+  const s1=new Set(fp1),s2=new Set(fp2);
+  const inter=[...s1].filter(k=>s2.has(k));
+  const union=new Set([...s1,...s2]);
+  return union.size>0?inter.length/union.size:0;
+}
+function getFP(item){
+  if(item.fingerprint&&Array.isArray(item.fingerprint)&&item.fingerprint.length)return item.fingerprint;
+  return extFP((item.title||'')+' '+(item.content||''));
+}
+
+// ===== 预置演示数据 =====
+const DEMO_ITEMS = [
+  { title:'AI 大模型发展历程', content:'从 GPT-1 到 GPT-4，大语言模型经历了参数规模从 1.17亿 到 1.8万亿 的爆发式增长。Transformer 架构自 2017 年提出后成为主流。RLHF 技术让模型输出更符合人类偏好。多模态能力使模型可以理解和生成文本、图像、代码等多种内容。', category:'人工智能', summary:'大语言模型从 GPT 到多模态的演进与突破', tags:['AI','大模型','GPT'] },
+  { title:'JavaScript 异步编程', content:'JavaScript 的异步编程经历了 callback → Promise → async/await 的演进。Promise 解决了回调地狱问题，async/await 让异步代码看起来像同步代码。Event Loop 是理解 JS 异步的关键。', category:'编程技术', summary:'JS 异步从回调到 async/await 的演进', tags:['编程','JavaScript','异步'] },
+  { title:'机器学习基础概念', content:'监督学习需要标注数据，无监督学习发现数据内在结构，强化学习通过与环境交互学习策略。过拟合和欠拟合是常见问题，交叉验证评估模型性能。特征工程和模型选择是实践关键。', category:'人工智能', summary:'监督/无监督/强化学习的核心概念', tags:['AI','机器学习'] },
+  { title:'CSS Grid 布局', content:'CSS Grid 是二维布局系统，可同时控制行和列。fr 单位表示剩余空间等分，grid-template-areas 实现区域命名布局。Grid 适合整体页面布局，Flexbox 适合一维排列。', category:'编程技术', summary:'CSS Grid 二维布局系统核心用法', tags:['编程','CSS','前端'] },
+  { title:'Python 数据科学栈', content:'Pandas 用于数据处理和分析，NumPy 提供高效数值计算，Matplotlib/Seaborn 用于可视化。Jupyter Notebook 支持交互式开发。Scikit-learn 提供丰富机器学习算法。', category:'数据科学', summary:'Python 数据科学核心工具链', tags:['编程','Python','数据科学'] },
+  { title:'RESTful API 设计原则', content:'使用名词命名资源，HTTP 方法表示操作(GET/POST/PUT/DELETE)。状态码准确表达结果，版本号管理 API (/v1/)。JWT 无状态认证，OAuth2 第三方授权。', category:'编程技术', summary:'RESTful API 资源命名与状态码规范', tags:['编程','API','后端'] },
+  { title:'Docker 容器化部署', content:'Dockerfile 定义镜像构建步骤，docker-compose.yml 编排多容器。容器共享宿主机内核，启动秒级。Kubernetes 管理容器集群，实现自动扩缩容和滚动更新。', category:'编程技术', summary:'Docker 容器化与 Kubernetes 编排基础', tags:['编程','Docker','部署'] },
+  { title:'深度学习与神经网络', content:'CNN 擅长图像、RNN/LSTM 适合序列、Transformer 用自注意力捕获长距离依赖。激活函数引入非线性，反向传播计算梯度。Batch Normalization 加速训练，Dropout 防止过拟合。', category:'人工智能', summary:'CNN/RNN/Transformer 三大架构原理', tags:['AI','深度学习'] },
+];
+
+// ===== 演示数据定义 =====
+// 初始化已在 initData() 中自动处理
+
+// ===== AI 增强：自动分类 + 总结 + 关联 =====
+async function aiEnhance(item, allItems) {
+  const apiKey = loadAK() || 'sk-207863609b034ffaa562c29de535ffb4';
+  if (!apiKey) return false;
+
+  const existing = allItems
+    .filter(i => i.id !== item.id)
+    .map(i => `{"id":${i.id},"title":"${(i.title||'').replace(/"/g,'\\"')}","category":"${(i.category||'').replace(/"/g,'\\"')}"}`)
+    .join(',\n');
+
+  const prompt = `你是知识组织助手。分析新知识点并归类。
+
+新知识点：
+标题：${item.title}
+内容：${item.content}
+
+已有知识库：
+[${existing}]
+
+严格返回 JSON（不要多余文字）：
+{
+  "category": "简短分类名，2-4 字，如：英语学习、编程技术、AI人工、设计美学、数据科学",
+  "summary": "一句话总结（20 字内）",
+  "relatedIds": [关联的已有 ID 数组，不相关则为 []]
+}`;
+
+  try {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+      body:JSON.stringify({
+        model:'deepseek-chat',
+        messages:[
+          {role:'system',content:'你是一个知识组织AI，只返回有效JSON。'},
+          {role:'user',content:prompt}
+        ],
+        temperature:.3,max_tokens:500
+      })
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const result = JSON.parse(data.choices[0].message.content);
+    item.category = result.category && result.category !== '未分类' ? result.category : item.category || '未分类';
+    item.summary = result.summary || '';
+    item.relatedIds = Array.isArray(result.relatedIds) ? result.relatedIds : [];
+    return true;
+  } catch(e) {
+    console.log('AI enhance failed:', e);
+    return false;
+  }
+}
+
+// ===== AI 星系命名 =====
+const FALLBACK_GALAXY = {
+  '未分类':'混沌星域','人工智能':'智械星云','编程技术':'代码星河',
+  '数据科学':'数据星海','设计美学':'幻彩星云','英语学习':'语汇星环'
+};
+function fallbackGalaxyName(cat){return FALLBACK_GALAXY[cat]||(cat.slice(0,2)+'星域')}
+
+async function generateGalaxyNames(items){
+  const apiKey=loadAK();
+  const cats=[...new Set(items.map(i=>i.category||'未分类'))];
+  const existing=loadGalaxies();
+  const updated={...existing};
+
+  // 先用 fallback 名填充
+  cats.forEach(c=>{if(!updated[c]||!updated[c].name)updated[c]={name:fallbackGalaxyName(c),aiGenerated:false}});
+  saveGalaxies(updated);
+  populateGalaxySelector();
+
+  const needGen=cats.filter(c=>!existing[c]||!existing[c].name);
+  if(!apiKey||!needGen.length)return;
+
+  document.getElementById('aiIndicator').classList.add('show');
+  for(const cat of needGen){
+    const catItems=items.filter(i=>(i.category||'未分类')===cat);
+    const titles=catItems.map(i=>i.title).slice(0,6).join(', ');
+    const prompt='为以下知识分类生成一个科幻风格的星系名（2-4个字），要体现该分类下知识点的共同主题。\n\n分类:'+cat+'\n知识点:'+titles+'\n\n返回JSON:{"galaxyName":"..."}';
+    try{
+      const res=await fetch('https://api.deepseek.com/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+        body:JSON.stringify({model:'deepseek-chat',messages:[{role:'system',content:'你是一个科幻命名AI，只返回JSON。'},{role:'user',content:prompt}],temperature:.8,max_tokens:200})
+      });
+      if(res.ok){
+        const d=await res.json();
+        const r=JSON.parse(d.choices[0].message.content);
+        if(r&&r.galaxyName){updated[cat]={name:r.galaxyName,aiGenerated:true};saveGalaxies(updated)}
+      }
+    }catch(e){console.log('Galaxy name gen failed:',cat,e)}
+  }
+  document.getElementById('aiIndicator').classList.remove('show');
+  populateGalaxySelector();
+}
+
+// ===== 添加知识 =====
+async function addItem(){
+  const t=document.getElementById('ipt-title').value.trim(),c=document.getElementById('ipt-content').value.trim();
+  if(!t||!c){alert('请填写标题和内容');return}
+  const items=load();
+  const newItem={
+    id:Date.now(),title:t,content:c,
+    category:'未分类',summary:'',relatedIds:[],
+    image:currentImageDataURL||null,
+    tags:document.getElementById('ipt-tags').value.split(/[,，]/).map(s=>s.trim()).filter(Boolean),
+    fingerprint:extFP(t+' '+c),
+    createdAt:new Date().toISOString()
+  };
+  items.push(newItem);
+  save(items);
+
+  document.getElementById('ipt-title').value='';
+  document.getElementById('ipt-content').value='';
+  document.getElementById('ipt-tags').value='';
+  removeImage();
+  closeP('add');
+
+  document.getElementById('aiIndicator').classList.add('show');
+  const enhanced = await aiEnhance(newItem, items);
+  if (enhanced) {
+    const all = load();
+    const idx = all.findIndex(x => x.id === newItem.id);
+    if (idx !== -1) { all[idx] = newItem; save(all); }
+  }
+  document.getElementById('aiIndicator').classList.remove('show');
+  rebuild();
+  upStats();
+  generateGalaxyNames(load());
+}
+
+// ===== 一键导入链接 =====
+async function importUrl(){
+  const url=document.getElementById('ipt-import-url').value.trim();
+  if(!url)return;
+  const st=document.getElementById('importUrlStatus');
+  st.textContent='⏳ 正在获取链接内容...';
+  try{
+    const res=await fetch('/api/import-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
+    if(!res.ok)throw new Error('后端不可用');
+    const d=await res.json();
+    document.getElementById('ipt-title').value=d.title||'';
+    document.getElementById('ipt-content').value=d.content||'';
+    document.getElementById('ipt-tags').value=(d.tags||[]).join(', ');
+    st.textContent='✅ 内容已提取，请确认后点「存入知识宇宙」';
+  }catch(e){
+    st.textContent='❌ 需要启动后端服务：在终端运行 node server.js';
+  }
+}
+
+// ===== AI 批量导入 =====
+async function bulkImport(){
+  const text=document.getElementById('ipt-bulk').value.trim();
+  if(text.length<20){alert('请粘贴至少 20 个字符的内容');return}
+  const apiKey=loadAK()||'sk-207863609b034ffaa562c29de535ffb4';
+  if(!apiKey){alert('请先在设置中配置 API Key');return}
+  const st=document.getElementById('bulkStatus');
+  st.textContent='⏳ AI 正在分析拆解...';
+  document.getElementById('aiIndicator').classList.add('show');
+  try{
+    const res=await fetch('https://api.deepseek.com/chat/completions',{
+      method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+      body:JSON.stringify({model:'deepseek-chat',messages:[{role:'system',content:'你是一个知识整理AI，只返回有效JSON数组。'},{role:'user',content:'将以下文本拆分为多个独立知识点。每个知识点包含 title(标题)、content(完整原文段落)、summary(15字内摘要)、category(2-4字分类)、tags(3-5个标签)。如果原文短(<100字)作为单条。\n\n文本：\n'+text.slice(0,8000)+'\n\n严格返回JSON数组：\n[{"title":"...","summary":"...","category":"...","content":"...","tags":["...","..."]}]'}],temperature:.3,max_tokens:2000})});
+    if(!res.ok){st.textContent='❌ API错误('+res.status+')';return}
+    const d=await res.json(),msg=d.choices[0].message.content;
+    let entries;try{entries=JSON.parse(msg)}catch(e){const m=msg.match(/\[\s*\{[\s\S]*\}\s*\]/);if(m)entries=JSON.parse(m[0]);else throw e}
+    if(!Array.isArray(entries)||!entries.length){st.textContent='❌ AI 解析失败，请重试';return}
+    const items=load();let added=0;
+    for(const e of entries){
+      if(!e.title||!e.content)continue;
+      items.push({id:Date.now()+added,title:e.title,content:e.content,category:e.category||'未分类',summary:e.summary||'',tags:e.tags||[],image:null,relatedIds:[],fingerprint:extFP(e.title+' '+e.content),createdAt:new Date().toISOString()});
+      added++;
+    }
+    save(items);
+    st.textContent='✅ 成功导入 '+added+' 条知识！';
+    document.getElementById('ipt-bulk').value='';
+    rebuild();upStats();generateGalaxyNames(load());
+  }catch(e){st.textContent='❌ 错误: '+e.message}
+  finally{document.getElementById('aiIndicator').classList.remove('show')}
+}
+
+function delItem(id){
+  let items=load();
+  items=items.filter(i=>i.id!==id);
+  items.forEach(i=>{i.relatedIds=i.relatedIds.filter(rid=>rid!==id)});
+  save(items);
+  rebuild();upStats();rendL();
+  generateGalaxyNames(load());
+}
+
+function clearAll(){
+  save([]);
+  saveGalaxies({});
+  rebuild();upStats();rendL();
+  document.getElementById('setCount').textContent='0';
+  populateGalaxySelector();
+}
+
+// ===== 图片处理 =====
+let currentImageDataURL = null;
+
+function handleImage(input){
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 500 * 1024) {
+    alert('图片太大，请选择 500KB 以下的图片');
+    input.value = '';
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      let w = img.width, h = img.height;
+      const maxW = 400;
+      if (w > maxW) { h = h * maxW / w; w = maxW; }
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      currentImageDataURL = canvas.toDataURL('image/jpeg', 0.7);
+      const prev = document.getElementById('imgPreview');
+      prev.src = currentImageDataURL;
+      prev.classList.add('show');
+      document.getElementById('imgRemove').classList.add('show');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeImage(){
+  currentImageDataURL = null;
+  document.getElementById('imgInput').value = '';
+  const prev = document.getElementById('imgPreview');
+  prev.classList.remove('show');
+  prev.src = '';
+  document.getElementById('imgRemove').classList.remove('show');
+}
+
+// ===== AI 问答 =====
+async function ask(){
+  const inp=document.getElementById('chatIn'),q=inp.value.trim();if(!q)return;inp.value='';
+  const b=document.getElementById('chatB');
+  b.insertAdjacentHTML('beforeend',`<div class="chat-m u">${q}</div>`);b.scrollTop=b.scrollHeight;
+  const th=document.createElement('div');th.className='chat-m a';th.textContent='Processing...';b.appendChild(th);b.scrollTop=b.scrollHeight;
+  const items=load();
+  if(!items.length){th.textContent='知识库是空的。';return}
+  const qFp=extFP(q);
+  const ranked=items.map(i=>({item:i,score:rel(qFp,i.fingerprint)})).sort((a,b)=>b.score-a.score);
+  const top=ranked.filter(r=>r.score>0).slice(0,5);
+  const ctx=top.length?top.map((r,i)=>`[${i+1}]${r.item.title}\n${r.item.content?.slice(0,500)}`).join('\n\n'):items.slice(0,3).map(i=>`${i.title}\n${i.content?.slice(0,300)}`).join('\n\n');
+  const ak=loadAK()||'sk-207863609b034ffaa562c29de535ffb4';
+  try{
+    const res=await fetch('https://api.deepseek.com/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${ak}`},body:JSON.stringify({model:'deepseek-chat',messages:[{role:'system',content:`你是一个个人知识库助手。基于以下内容回答。不知道就说不知道。\n\n知识库：\n${ctx}`},{role:'user',content:q}],temperature:.6,max_tokens:1e3})});
+    if(!res.ok){const e=await res.text();th.innerHTML=res.status===401?'API Key 无效，在设置中配置。':`API错误(${res.status})`;return}
+    const d=await res.json();
+    let a=d.choices[0].message.content;
+    if(top.length)a+='\n\n——\n参考：'+top.map(r=>r.item.title).join('、');
+    th.innerHTML=a.replace(/\n/g,'<br>');
+  }catch(e){
+    if(e.message?.includes('Failed')||e.message?.includes('CORS'))th.innerHTML='浏览器限制，无法直接调用 API。在设置中配置 Key 后重试。';
+    else th.innerHTML='错误：'+e.message;
+  }
+  b.scrollTop=b.scrollHeight;
+}
+
+// ===== UI 面板 =====
+function openP(n){
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('open'));
+  document.getElementById('p-'+n).classList.add('open');
+  if(n==='list')rendL();
+  if(n==='settings'){
+    document.getElementById('ipt-apikey').value=loadAK();
+    document.getElementById('setCount').textContent=load().length;
+    const sc=getTheme('sphere_color','#00ccff');
+    const uc=getTheme('ui_color','#00ccff');
+    document.getElementById('ipt-sphere-color').value=sc;
+    document.getElementById('ipt-ui-color').value=uc;
+    document.getElementById('sphereColorVal').textContent=sc;
+    document.getElementById('uiColorVal').textContent=uc;
+  }
+}
+function closeP(n){document.getElementById('p-'+n).classList.remove('open')}
+
+function rendL(){
+  const items=load(),el=document.getElementById('listC');
+  if(!items.length){el.innerHTML='<div class="empty"><div class="ei">◈</div><p>空。点击 ＋ 添加第一条知识。</p></div>';return}
+  el.innerHTML='<div class="kl">'+items.map(i=>`<div class="kc" onclick="showD(${i.id})"><button class="kd btn-d" onclick="event.stopPropagation();delItem(${i.id})">✕</button><h3>${i.title}<span class="kcat">${i.category||'未分类'}</span></h3><div class="kp">${(i.content||'').slice(0,50)}${(i.content||'').length>50?'…':''}</div></div>`).join('')+'</div>';
+}
+
+// ===== 详情面板 =====
+function showD(id){
+  const item=load().find(x=>x.id===id);
+  if(!item)return;
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('open'));
+  document.getElementById('p-detail').classList.add('open');
+
+  document.getElementById('detailCategory').textContent='◆ '+(item.category||'未分类');
+
+  document.getElementById('detailTitle').textContent=item.title;
+
+  const sumEl=document.getElementById('detailSummary');
+  if(item.summary){sumEl.textContent=item.summary;sumEl.style.display='block'}
+  else sumEl.style.display='none';
+
+  const imgEl=document.getElementById('detailImage');
+  if(item.image){imgEl.innerHTML='<img src="'+item.image+'" alt="'+item.title+'">';imgEl.style.display='block'}
+  else imgEl.style.display='none';
+
+  document.getElementById('detailContent').textContent=item.content||'';
+
+  const tagsEl=document.getElementById('detailTags');
+  if(item.tags&&item.tags.length){
+    tagsEl.innerHTML=item.tags.map(t=>'<span class="dt-tag">'+t+'</span>').join('');
+    tagsEl.style.display='flex';
+  } else tagsEl.style.display='none';
+
+  const relEl=document.getElementById('detailRelated');
+  const all=load();
+  const related=(item.relatedIds||[]).map(rid=>all.find(x=>x.id===rid)).filter(Boolean);
+  if(related.length){
+    relEl.innerHTML='<h4>关联节点</h4>'+related.map(r=>'<div class="dt-related-item" onclick="showD('+r.id+')">'+r.title+'<span style="float:right;font-size:10px;color:rgba(255,255,255,.2)">'+(r.category||'未分类')+'</span></div>').join('');
+    relEl.style.display='block';
+  } else relEl.style.display='none';
+}
+
+function closeM(){document.getElementById('modal').classList.remove('o');document.getElementById('modalBg').classList.remove('o')}
+
+function upStats(){
+  const d=getGraphData();
+  document.getElementById('hudNodes').textContent='NODES: '+d.nodes.length;
+  document.getElementById('hudLinks').textContent='LINKS: '+d.links.length;
+  document.getElementById('hudStatus').textContent='SYSTEM ACTIVE';
+  const eh=document.getElementById('emptyHint');
+  if(d.nodes.length===0){eh.classList.remove('hidden')}else{eh.classList.add('hidden')}
+}
+
+// ===== 图数据 =====
+function hubScore(item,group){
+  let s=0;
+  s+=group.filter(x=>x.id!==item.id&&(x.relatedIds||[]).includes(item.id)).length*3;
+  s+=Math.min((item.content||'').length/300,2);
+  s+=Math.min((item.title||'').length/8,1);
+  const others=group.filter(x=>x.id!==item.id);
+  if(others.length){
+    s+=others.reduce((sum,x)=>sum+rel(getFP(item),getFP(x)),0)/others.length*2;
+  }
+  return s;
+}
+function getGraphData(){
+  const items=load().map(migrate);
+  const nodes=items.map(i=>({id:i.id,title:i.title,category:i.category,summary:i.summary,content:(i.content||'').slice(0,80)}));
+  const links=[];const linked=new Set();
+  // Group by category
+  const catGroups={};
+  items.forEach(item=>{const cat=item.category||'未分类';if(!catGroups[cat])catGroups[cat]=[];catGroups[cat].push(item)});
+  // Within each category: star topology (hub → leaves)
+  Object.values(catGroups).forEach(group=>{
+    if(group.length<2)return;
+    const scored=group.map(item=>({item,score:hubScore(item,group)}));
+    scored.sort((a,b)=>b.score-a.score);
+    const hub=scored[0].item;
+    group.forEach(item=>{
+      if(item.id===hub.id)return;
+      const key=Math.min(hub.id,item.id)+'-'+Math.max(hub.id,item.id);
+      if(linked.has(key))return;
+      linked.add(key);
+      const sim=rel(getFP(hub),getFP(item));
+      links.push({source:hub.id,target:item.id,strength:Math.max(.12,Math.round(sim*100)/100)||.25});
+    });
+  });
+  // Cross-category: hub-to-hub (similarity-based, sparse)
+  const hubs=Object.keys(catGroups).map(cat=>{
+    const g=catGroups[cat];
+    if(!g.length)return null;
+    const scored=g.map(item=>({item,score:hubScore(item,g)}));
+    scored.sort((a,b)=>b.score-a.score);
+    return scored[0].item;
+  }).filter(Boolean);
+  for(let i=0;i<hubs.length;i++){
+    for(let j=i+1;j<hubs.length;j++){
+      const sim=rel(getFP(hubs[i]),getFP(hubs[j]));
+      if(sim>.025){
+        const key=Math.min(hubs[i].id,hubs[j].id)+'-'+Math.max(hubs[i].id,hubs[j].id);
+        if(!linked.has(key)){linked.add(key);links.push({source:hubs[i].id,target:hubs[j].id,strength:Math.round(sim*100)/100})}
+      }
+    }
+  }
+  // Cross-category explicit relatedIds (user/AI defined)
+  items.forEach(item=>{
+    (item.relatedIds||[]).forEach(rid=>{
+      const target=items.find(x=>x.id===rid);
+      if(!target)return;
+      if((item.category||'未分类')===(target.category||'未分类'))return;
+      const key=Math.min(item.id,rid)+'-'+Math.max(item.id,rid);
+      if(!linked.has(key)){linked.add(key);links.push({source:item.id,target:rid,strength:.45})}
+    });
+  });
+  return{nodes,links};
+}
+
+// ============================================================
+//  THREE.JS
+// ============================================================
+const container=document.getElementById('scene-container');
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x000000);
+
+const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,.1,1e3);
+camera.position.set(0,2,6);
+
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+container.appendChild(renderer.domElement);
+
+const controls=new THREE.OrbitControls(camera,renderer.domElement);
+controls.enableDamping=true;controls.dampingFactor=.08;
+controls.autoRotate=true;controls.autoRotateSpeed=.4;
+controls.minDistance=2;controls.maxDistance=25;
+controls.screenSpacePanning=true;
+controls.panSpeed=1.5;
+controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.PAN};
+// Shift+左键 = 平移（避免与浏览器右键菜单冲突）
+let _shiftDown=false;
+renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+document.addEventListener('keydown',e=>{if(e.key==='Shift'){_shiftDown=true;controls.mouseButtons.LEFT=THREE.MOUSE.PAN}});
+document.addEventListener('keyup',e=>{if(e.key==='Shift'){_shiftDown=false;controls.mouseButtons.LEFT=THREE.MOUSE.ROTATE}});
+// 移动端触摸手势：一指旋转、双指平移/缩放（OrbitControls 内置）
+
+const amb=new THREE.AmbientLight(0x224466);scene.add(amb);
+const dl=new THREE.DirectionalLight(0x4488ff,.5);dl.position.set(1,2,1);scene.add(dl);
+
+// ===== 星空背景 =====
+const starField=new THREE.Group();scene.add(starField);
+const sc=12000;
+const sg=new THREE.BufferGeometry();const sp=new Float32Array(sc*3);const sc2=new Float32Array(sc*3);
+const sv=new Float32Array(sc);const ss=new Float32Array(sc);
+for(let i=0;i<sc;i++){
+  const r=8+Math.random()*100,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+  sp[i*3]=r*Math.sin(ph)*Math.cos(th);sp[i*3+1]=r*Math.sin(ph)*Math.sin(th);sp[i*3+2]=r*Math.cos(ph);
+  const t=Math.random();
+  if(t>.97){sc2[i*3]=.5;sc2[i*3+1]=.7;sc2[i*3+2]=1}
+  else if(t>.93){sc2[i*3]=1;sc2[i*3+1]=.85;sc2[i*3+2]=.6}
+  else if(t>.88){sc2[i*3]=1;sc2[i*3+1]=.5;sc2[i*3+2]=.3}
+  else{const br=.5+Math.random()*.5;sc2[i*3]=br;sc2[i*3+1]=br;sc2[i*3+2]=br+.08}
+  ss[i]=.02+Math.random()*.12;sv[i]=.3+Math.random()*2;
+}
+sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
+sg.setAttribute('color',new THREE.BufferAttribute(sc2,3));
+sg.setAttribute('size',new THREE.BufferAttribute(ss,1));
+const sm=new THREE.PointsMaterial({size:.08,vertexColors:true,transparent:true,opacity:.9,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true});
+const stars=new THREE.Points(sg,sm);starField.add(stars);
+
+// 大亮星
+for(let i=0;i<20;i++){
+  const r=10+Math.random()*60,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
+  const c=document.createElement('canvas');c.width=32;c.height=32;
+  const ctx=c.getContext('2d');
+  const g=ctx.createRadialGradient(16,16,0,16,16,16);
+  const col=i%3===0?'rgba(200,230,255,1)':i%3===1?'rgba(255,240,200,1)':'rgba(255,200,200,1)';
+  g.addColorStop(0,col);g.addColorStop(.2,col.replace(',1)',',.5)'));g.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g;ctx.fillRect(0,0,32,32);
+  const tex=new THREE.CanvasTexture(c);
+  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,blending:THREE.AdditiveBlending,depthWrite:false,transparent:true}));
+  sprite.position.set(r*Math.sin(ph)*Math.cos(th),r*Math.sin(ph)*Math.sin(th),r*Math.cos(ph));
+  sprite.scale.set(.3+Math.random()*.8,.3+Math.random()*.8,1);
+  starField.add(sprite);
+}
+
+// ===== 节点系统 =====
+const nodeGroup=new THREE.Group();scene.add(nodeGroup);
+let allMeshes=[];let linkLines=null;let linkGroup=null;let linkGlowLines=null;let categoryLabels=[];
+const clock=new THREE.Clock();
+
+// 相机聚焦状态
+let _focusTarget=null;
+let _isFocused=false;
+let _savedAutoRotate=true;
+
+// 计算聚类位置
+function computePositions(items){
+  if(!items.length)return{};
+  const groups={};
+  items.forEach(item=>{const cat=item.category||'未分类';if(!groups[cat])groups[cat]=[];groups[cat].push(item)});
+  const cats=Object.keys(groups);const positions={};
+  // Find hubs
+  const hubIds={};
+  cats.forEach(cat=>{
+    const list=groups[cat];
+    if(list.length<2){hubIds[cat]=list[0]?.id;return}
+    const scored=list.map(item=>({item,score:hubScore(item,list)}));
+    scored.sort((a,b)=>b.score-a.score);
+    hubIds[cat]=scored[0].item.id;
+  });
+  cats.forEach((cat,ci)=>{
+    const list=groups[cat],count=list.length;
+    const angle=(ci/cats.length)*Math.PI*2-Math.PI/2;
+    const dist=4.0;const cx=Math.cos(angle)*dist;const cz=Math.sin(angle)*dist;const cy=Math.sin(angle*2)*.4;
+    const hubId=hubIds[cat];
+    // Hub at center of cluster
+    const hubItem=list.find(i=>i.id===hubId);
+    if(hubItem)positions[hubItem.id]={x:cx,y:cy,z:cz};
+    // Leaves in ring around hub
+    const leaves=list.filter(i=>i.id!==hubId);
+    leaves.forEach((item,ii)=>{
+      const ia=(ii/leaves.length)*Math.PI*2;
+      const spread=Math.min(2.0,.8+count*.15);
+      positions[item.id]={x:cx+Math.cos(ia)*spread,y:cy+Math.sin(ia*2)*spread*.4,z:cz+Math.sin(ia)*spread};
+    });
+  });
+  return positions;
+}
+
+// ===== 创建全息连线（JARVIS 风格）=====
+function createThickLink(p1,p2,color,radius){
+  const start=new THREE.Vector3(p1.x,p1.y,p1.z);
+  const end=new THREE.Vector3(p2.x,p2.y,p2.z);
+  const dir=new THREE.Vector3().copy(end).sub(start);
+  const len=dir.length();if(len<.001)return null;
+  const mid=new THREE.Vector3().copy(start).add(end).multiplyScalar(.5);
+  const norm=dir.clone().normalize();
+  const up=new THREE.Vector3(0,1,0);
+  const group=new THREE.Group();
+  group.position.copy(mid);
+
+  // Core line（极细核心线）
+  const coreR=Math.max(.002,radius*.6);
+  const glowR=Math.max(.006,radius*2.2);
+  const core=new THREE.Mesh(
+    new THREE.CylinderGeometry(coreR*.7,coreR,len,5,1),
+    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.35,blending:THREE.AdditiveBlending,depthWrite:false})
+  );
+  core.quaternion.setFromUnitVectors(up,norm);
+  core.userData.isGlow=false;
+  group.add(core);
+
+  // Glow aura（辉光外层）
+  const glow=new THREE.Mesh(
+    new THREE.CylinderGeometry(glowR*.7,glowR,len,5,1),
+    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.07,blending:THREE.AdditiveBlending,depthWrite:false})
+  );
+  glow.quaternion.setFromUnitVectors(up,norm);
+  glow.userData.isGlow=true;
+  group.add(glow);
+
+  // 标记连线端点用于方向脉冲
+  group.userData={start:p1,end:p2,length:len};
+  return group;
+}
+
+function createHoloSphere(pos, item, index, total){
+  const baseHue=hexToHue(getTheme('sphere_color','#00ccff'));
+  const hue=baseHue-15+Math.random()*30;
+  const color=new THREE.Color(`hsl(${hue},60%,68%)`);
+  const glow=new THREE.Color(`hsl(${hue},65%,52%)`);
+
+  const group=new THREE.Group();
+  group.position.set(pos.x,pos.y,pos.z);
+
+  const base=.28+Math.random()*.1;
+
+  // 内核
+  const innerMat=new THREE.MeshPhysicalMaterial({color,transparent:true,opacity:.07,metalness:0,roughness:.3,emissive:glow,emissiveIntensity:.04});
+  group.add(new THREE.Mesh(new THREE.SphereGeometry(base,24,24),innerMat));
+
+  // 线框
+  const wireMat=new THREE.MeshBasicMaterial({color,wireframe:true,transparent:true,opacity:.1});
+  const wire=new THREE.Mesh(new THREE.SphereGeometry(base*1.08,10,10),wireMat);
+  group.add(wire);
+
+  // Edges 轮廓
+  const edges=new THREE.EdgesGeometry(new THREE.SphereGeometry(base*1.15,12,12));
+  group.add(new THREE.LineSegments(edges,new THREE.LineBasicMaterial({color,transparent:true,opacity:.22})));
+
+  // 外层大线框
+  const outerEdges=new THREE.EdgesGeometry(new THREE.SphereGeometry(base*1.5,6,6));
+  group.add(new THREE.LineSegments(outerEdges,new THREE.LineBasicMaterial({color:0x44ccff,transparent:true,opacity:.04})));
+
+  // 环1
+  const r1=base*1.6;const p1=[];for(let a=0;a<=64;a++){const ang=a/64*Math.PI*2;p1.push(new THREE.Vector3(Math.cos(ang)*r1,Math.sin(ang)*r1,0))}
+  const ring=new THREE.Line(new THREE.BufferGeometry().setFromPoints(p1),new THREE.LineBasicMaterial({color:0x44ddff,transparent:true,opacity:.07}));group.add(ring);
+
+  // 环2
+  const r2=base*1.3;const p2=[];for(let a=0;a<=64;a++){const ang=a/64*Math.PI*2;p2.push(new THREE.Vector3(Math.cos(ang)*r2,0,Math.sin(ang)*r2))}
+  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(p2),new THREE.LineBasicMaterial({color:0x0088ff,transparent:true,opacity:.03})));
+
+  // 轨道粒子
+  const oc=8+Math.floor(Math.random()*8);const op=[];
+  for(let i=0;i<oc;i++){const a=i/oc*Math.PI*2;const rd=r1*.85;op.push(Math.cos(a)*rd,Math.sin(a)*rd,0)}
+  const ob=new THREE.BufferGeometry();ob.setAttribute('position',new THREE.Float32BufferAttribute(op,3));
+  const orb=new THREE.Points(ob,new THREE.PointsMaterial({color:0x66eeff,size:.02,transparent:true,opacity:.5,blending:THREE.AdditiveBlending}));group.add(orb);
+
+  return{group,wire,ring,orb,phase:Math.random()*Math.PI*2,baseSize:base};
+}
+
+function updateLabelPositions(){
+  const cats=getCategoryCenters();
+  const el=document.getElementById('scene-labels');
+  el.innerHTML='';
+  cats.forEach(cat=>{
+    const div=document.createElement('div');div.className='slabel';
+    const gname=getGalaxyName(cat.name);
+    div.textContent='◆ '+(gname||cat.name);
+    el.appendChild(div);cat.div=div;
+  });
+  window._catLabels=cats;
+}
+
+function getCategoryCenters(){
+  const items=load().map(migrate);
+  if(!items.length)return[];
+  const posMap={};
+  items.forEach(item=>{const p=_positions[item.id];if(p)posMap[item.id]=p});
+  const groups={};
+  items.forEach(item=>{
+    const cat=item.category||'未分类';
+    const p=posMap[item.id];if(!p)return;
+    if(!groups[cat])groups[cat]={x:0,y:0,z:0,count:0};
+    groups[cat].x+=p.x;groups[cat].y+=p.y;groups[cat].z+=p.z;groups[cat].count++;
+  });
+  return Object.keys(groups).map(name=>{const g=groups[name];return{name,x:g.x/g.count,y:g.y/g.count+.15,z:g.z/g.count}});
+}
+
+let _positions={};
+
+// ===== 星系选择器 =====
+function populateGalaxySelector(){
+  const sel=document.getElementById('galaxySelector');
+  if(!sel)return;
+  const galaxies=loadGalaxies();
+  sel.innerHTML='<option value="__all__">⟐ 全域</option>';
+  Object.keys(galaxies).forEach(cat=>{
+    const g=galaxies[cat];
+    const name=g&&g.name?g.name:cat;
+    const opt=document.createElement('option');opt.value=cat;opt.textContent='◈ '+name;
+    sel.appendChild(opt);
+  });
+}
+
+// ===== 相机聚焦 =====
+function focusOnGalaxy(categoryName){
+  const items=load().map(migrate);
+  const catItems=items.filter(i=>(i.category||'未分类')===categoryName);
+  if(!catItems.length)return;
+  let cx=0,cy=0,cz=0,count=0;
+  catItems.forEach(item=>{const p=_positions[item.id];if(p){cx+=p.x;cy+=p.y;cz+=p.z;count++}});
+  if(!count)return;
+  const t={x:cx/count,y:cy/count,z:cz/count};
+  _focusTarget=new THREE.Vector3(t.x,t.y,t.z);
+  _savedAutoRotate=controls.autoRotate;
+  controls.autoRotate=false;
+  _isFocused=true;
+  document.getElementById('btnResetGalaxy').classList.add('show');
+  const sel=document.getElementById('galaxySelector');
+  if(sel){sel.value=categoryName}
+}
+
+function resetCamera(){
+  _focusTarget=null;_isFocused=false;
+  controls.autoRotate=_savedAutoRotate;
+  document.getElementById('btnResetGalaxy').classList.remove('show');
+  const sel=document.getElementById('galaxySelector');
+  if(sel)sel.value='__all__';
+}
+
+function rebuild(){
+  while(nodeGroup.children.length)nodeGroup.remove(nodeGroup.children[0]);
+  if(linkLines){scene.remove(linkLines);linkLines=null}
+  if(linkGroup){scene.remove(linkGroup);linkGroup=null}
+  if(linkGlowLines){scene.remove(linkGlowLines);linkGlowLines=null}
+  allMeshes=[];
+
+  const items=load().map(migrate);
+  const data=getGraphData();
+
+  if(!data.nodes.length){document.getElementById('hudStatus').textContent='AWAITING INPUT';upStats();return}
+
+  _positions=computePositions(items);
+
+  data.nodes.forEach((node,i)=>{
+    const item=items.find(x=>x.id===node.id);
+    const pos=_positions[node.id]||{x:(Math.random()-.5)*3,y:(Math.random()-.5)*2,z:(Math.random()-.5)*3};
+    const h=createHoloSphere(pos,node,i,data.nodes.length);
+    nodeGroup.add(h.group);
+    allMeshes.push({group:h.group,nodeId:node.id,data:h});
+
+    // 标题标签（在星球内部，纯白高对比度）
+    const lc=document.createElement('canvas');lc.width=512;lc.height=128;
+    const lctx=lc.getContext('2d');
+    lctx.textAlign='center';lctx.textBaseline='middle';
+    lctx.font='bold 34px "Microsoft YaHei","Noto Sans SC",sans-serif';
+    lctx.shadowColor='rgba(0,0,0,1)';lctx.shadowBlur=24;
+    lctx.fillStyle='#ffffff';
+    const labelText=(node.title||'').slice(0,8);
+    lctx.fillText(labelText,256,64);
+    const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
+    const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
+    ls.position.set(0,0,0);
+    ls.scale.set(h.baseSize*1.3,h.baseSize*.45,1);
+    h.group.add(ls);
+  });
+
+  // 连线（圆柱体粗线 + 辉光线）
+  if(data.links.length){
+    linkGroup=new THREE.Group();scene.add(linkGroup);
+    const glowPos=[];const glowColors=[];
+    const uiHex=getTheme('ui_color','#00ccff');
+    const r=parseInt(uiHex.slice(1,3),16)/255,g=parseInt(uiHex.slice(3,5),16)/255,b=parseInt(uiHex.slice(5,7),16)/255;
+    const linkColor=new THREE.Color(uiHex);
+
+    data.links.forEach(link=>{
+      const s=allMeshes.find(m=>m.nodeId===link.source);
+      const t=allMeshes.find(m=>m.nodeId===link.target);
+      if(!s||!t)return;
+      const p1=s.group.position,p2=t.group.position;
+      const thickness=.003+(link.strength||.2)*.008;
+      const linkGroupObj=createThickLink(p1,p2,linkColor,Math.min(thickness,.015));
+      if(linkGroupObj){linkGroupObj.userData.linkInfo={source:link.source,target:link.target};linkGroup.add(linkGroupObj)}
+      glowPos.push(p1.x,p1.y,p1.z,p2.x,p2.y,p2.z);
+      glowColors.push(r,g,b,r*.35,g*.35,b*.35);
+    });
+
+    if(glowPos.length){
+      const gg=new THREE.BufferGeometry();
+      gg.setAttribute('position',new THREE.Float32BufferAttribute(glowPos,3));
+      gg.setAttribute('color',new THREE.Float32BufferAttribute(glowColors,3));
+      linkGlowLines=new THREE.LineSegments(gg,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.08,blending:THREE.AdditiveBlending,depthWrite:false}));
+      scene.add(linkGlowLines);
+    }
+  }
+
+  document.getElementById('hudStatus').textContent=`SYSTEM ACTIVE · ${data.nodes.length} NODES`;
+  upStats();
+  updateLabelPositions();
+  populateGalaxySelector();
+
+  // 点击检测
+  const rc=new THREE.Raycaster(),ms=new THREE.Vector2();
+  renderer.domElement.onclick=(ev)=>{
+    const rect=renderer.domElement.getBoundingClientRect();
+    ms.x=((ev.clientX-rect.left)/rect.width)*2-1;
+    ms.y=-((ev.clientY-rect.top)/rect.height)*2+1;
+    rc.setFromCamera(ms,camera);
+    const targets=allMeshes.map(m=>{
+      const spheres=m.group.children.filter(c=>c.type==='Mesh'&&c.geometry&&c.geometry.type==='SphereGeometry');
+      return{mesh:spheres[0],data:m};
+    }).filter(t=>t.mesh);
+    const hits=rc.intersectObjects(targets.map(t=>t.mesh));
+    if(hits.length){
+      const found=targets.find(t=>t.mesh===hits[0].object);
+      if(found)showD(found.data.nodeId);
+    }
+  };
+}
+
+// ===== 动画循环 =====
+function animate(){
+  requestAnimationFrame(animate);
+  const t=clock.getElapsedTime();
+
+  // 星星闪烁
+  stars.material.opacity=.7+Math.sin(t*.4)*.2+Math.sin(t*.8+.5)*.1;
+  starField.rotation.y=t*.002;
+  starField.rotation.x=Math.sin(t*.0008)*.015;
+
+  // 全息闪烁
+  allMeshes.forEach((m,i)=>{
+    const d=m.data;
+    const f=.5+Math.sin(t*1.5+d.phase)*.25+Math.sin(t*3+d.phase+.5)*.15;
+    if(d.wire)d.wire.material.opacity=.05+f*.1;
+    if(d.ring){d.ring.rotation.x=Math.sin(t*.6+d.phase)*.4;d.ring.rotation.z=t*.5+d.phase}
+    if(d.orb){
+      const c=d.orb.geometry.attributes.position.count;
+      const p=d.orb.geometry.attributes.position.array;
+      const rr=d.baseSize*1.6*.85;
+      for(let j=0;j<c;j++){const a=j/c*Math.PI*2+t*(.4+(i%5)*.03)+d.phase;p[j*3]=Math.cos(a)*rr;p[j*3+1]=Math.sin(a)*rr}
+      d.orb.geometry.attributes.position.needsUpdate=true;
+    }
+    d.group.scale.setScalar(1+Math.sin(t*1.2+d.phase)*.015);
+  });
+
+  // 圆柱连线脉冲（JARVIS 呼吸效果）
+  if(linkGroup){
+    linkGroup.children.forEach((g,gi)=>{
+      g.children.forEach(child=>{
+        if(child.isMesh){
+          if(child.userData.isGlow)child.material.opacity=.04+Math.sin(t*1.8+gi*.5)*.03;
+          else child.material.opacity=.28+Math.sin(t*1.2+gi*.4)*.14;
+        }
+      });
+    });
+  }
+  // 辉光线闪烁
+  if(linkGlowLines)linkGlowLines.material.opacity=.06+Math.sin(t*1.8)*.05;
+
+  // 相机聚焦缓动
+  if(_isFocused&&_focusTarget){
+    const posTarget=new THREE.Vector3(
+      _focusTarget.x+_focusTarget.x*.3,
+      _focusTarget.y+1.5,
+      _focusTarget.z+_focusTarget.z*.3+4
+    );
+    camera.position.lerp(posTarget,.035);
+    controls.target.lerp(_focusTarget,.035);
+  }
+
+  // 更新分类标签屏幕位置
+  if(window._catLabels){
+    const w2=innerWidth/2,h2=innerHeight/2;
+    window._catLabels.forEach(cat=>{
+      if(!cat.div)return;
+      const v=new THREE.Vector3(cat.x,cat.y,cat.z);
+      v.project(camera);
+      const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
+      if(v.z<1){cat.div.style.left=x+'px';cat.div.style.top=y+'px';cat.div.style.opacity=Math.max(.05,Math.min(1,1-Math.abs(v.z)*1.5))}
+      else{cat.div.style.opacity='0'}
+    });
+  }
+
+  controls.update();
+  renderer.render(scene,camera);
+}
+
+// ===== 自适应 =====
+onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)};
+
+// ===== 启动 =====
+(async function boot(){
+  await initData();
+  try{
+    const s=loadAK();if(s)document.getElementById('ipt-apikey').value=s;
+    const uiColor=getTheme('ui_color','#00ccff');
+    applyUITheme(uiColor);
+    const sc=document.getElementById('ipt-sphere-color');if(sc)sc.value=getTheme('sphere_color','#00ccff');
+    const uc=document.getElementById('ipt-ui-color');if(uc)uc.value=uiColor;
+  }catch(e){console.log(e)}
+  rebuild();
+  generateGalaxyNames(load());
+  setTimeout(()=>document.getElementById('loading').classList.add('hidden'),600);
+})();
+
+document.getElementById('ipt-apikey')?.addEventListener('change',function(){saveAK(this.value)});
+document.getElementById('ipt-sphere-color')?.addEventListener('input',function(){
+  const v=this.value;setTheme('sphere_color',v);
+  document.getElementById('sphereColorVal').textContent=v;rebuild();
+});
+document.getElementById('ipt-ui-color')?.addEventListener('input',function(){
+  const v=this.value;setTheme('ui_color',v);
+  document.getElementById('uiColorVal').textContent=v;applyUITheme(v);rebuild();
+});
+document.getElementById('galaxySelector')?.addEventListener('change',function(){
+  if(this.value==='__all__')resetCamera();else focusOnGalaxy(this.value);
+});
+
+animate();
+</script>
+</body>
+</html>
