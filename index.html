@@ -634,7 +634,10 @@ function applyUITheme(hex){
 function migrate(item){
   if(!item.category)item.category='未分类';
   if(!item.summary)item.summary='';
-  if(!item.relatedIds)item.relatedIds=[];
+  if(typeof item.relatedIds==='string')try{item.relatedIds=JSON.parse(item.relatedIds)}catch{e=>item.relatedIds=[]}
+  if(!Array.isArray(item.relatedIds))item.relatedIds=[];
+  if(typeof item.tags==='string')try{item.tags=JSON.parse(item.tags)}catch{e=>item.tags=[]}
+  if(!Array.isArray(item.tags))item.tags=[];
   if(!item.image)item.image=null;
   if(!item.fingerprint||!Array.isArray(item.fingerprint)||!item.fingerprint.length)
     item.fingerprint=extFP((item.title||'')+' '+(item.content||''));
