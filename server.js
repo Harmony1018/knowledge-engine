@@ -296,11 +296,12 @@ app.post('/api/ask', async (req, res) => {
 // ===== 前端页面 =====
 app.get('/', (req, res) => {
   for (const p of [
+    path.join(__dirname, 'index.html'),
     path.join(__dirname, 'knowledge-engine.html'),
     path.join(__dirname, '..', 'knowledge-engine.html'),
     path.join(__dirname, 'public', 'index.html')
   ]) { if (fs.existsSync(p)) return res.sendFile(p); }
-  res.send('<h2>请将 knowledge-engine.html 放在服务器目录下</h2>');
+  res.send('<h2>请将前端文件放在服务器目录下</h2>');
 });
 
 // ===== 启动 =====

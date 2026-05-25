@@ -519,30 +519,50 @@ body {
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
-// ===== 云数据层（API + 内存缓存，失败回退 localStorage）=====
+// ===== Supabase 数据层（自动回退 localStorage）=====
 const DBK='knowledge_nebula_data',AKK='knowledge_nebula_apikey',THK='knowledge_nebula_theme',GLK='knowledge_nebula_galaxies';
-let _itemsCache=[];
-let _galaxiesCache={};
+const SB_URL='https://tozftkijlixrjiagpknr.supabase.co';
+const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRvemZ0a2lqbGl4cmppYWdwa25yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3MTM5MjUsImV4cCI6MjA5NTI4OTkyNX0.oMiCnF7W5R1EbNB7rQBZOlpAT9vqqL5NRBX5TBJ0MMw';
+const SB_HDR={'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY,'Prefer':'return=minimal'};
+let _itemsCache=[],_galaxiesCache={};
 
 function load(){return _itemsCache}
 function loadGalaxies(){return _galaxiesCache}
 
+async function sbFetch(path,opt){
+  try{const r=await fetch(SB_URL+'/rest/v1/'+path,opt);if(r.ok)return r;throw new Error(r.status)}
+  catch(e){throw e}
+}
+
 async function save(items){
   _itemsCache=items;
-  try{await fetch('/api/items/sync',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(items)})}
-  catch(e){try{localStorage.setItem(DBK,JSON.stringify(items))}catch{}}
+  try{
+    await sbFetch('items?id=gte.0',{method:'DELETE',headers:SB_HDR});
+    if(items.length)await sbFetch('items',{method:'POST',headers:SB_HDR,body:JSON.stringify(items.map(i=>({
+      id:i.id,title:i.title,content:i.content,category:i.category||'未分类',summary:i.summary||'',
+      tags:JSON.stringify(i.tags||[]),image:i.image||null,related_ids:JSON.stringify(i.relatedIds||[]),
+      fingerprint:JSON.stringify(i.fingerprint||[]),created_at:i.createdAt||new Date().toISOString()
+    })))});
+  }catch(e){try{localStorage.setItem(DBK,JSON.stringify(items))}catch{}}
 }
 async function saveGalaxies(g){
   _galaxiesCache=g;
-  try{await fetch('/api/galaxies',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(g)})}
-  catch(e){try{localStorage.setItem(GLK,JSON.stringify(g))}catch{}}
+  try{
+    await sbFetch('galaxies?id=gte.0',{method:'DELETE',headers:SB_HDR});
+    const e=Object.entries(g);
+    if(e.length)await sbFetch('galaxies',{method:'POST',headers:SB_HDR,body:JSON.stringify(e.map(([cat,d])=>({category:cat,name:d.name||cat,ai_generated:d.aiGenerated||false})))});
+  }catch(e){try{localStorage.setItem(GLK,JSON.stringify(g))}catch{}}
 }
 
 async function initData(){
   try{
-    const [ir,gr]=await Promise.all([fetch('/api/items'),fetch('/api/galaxies')]);
-    _itemsCache=await ir.json();
-    _galaxiesCache=await gr.json();
+    const [ir,gr]=await Promise.all([
+      sbFetch('items?select=*',{headers:SB_HDR}).then(r=>r.json()),
+      sbFetch('galaxies?select=*',{headers:SB_HDR}).then(r=>r.json())
+    ]);
+    _itemsCache=ir.map(i=>({id:i.id,title:i.title,content:i.content,category:i.category,summary:i.summary,
+      tags:i.tags||[],image:i.image,relatedIds:i.related_ids||[],fingerprint:i.fingerprint||[],createdAt:i.created_at}));
+    const gs={};gr.forEach(r=>{gs[r.category]={name:r.name,aiGenerated:r.ai_generated}});_galaxiesCache=gs;
   }catch(e){
     try{_itemsCache=JSON.parse(localStorage.getItem(DBK))||[]}catch{_itemsCache=[]}
     try{var v=localStorage.getItem(GLK);_galaxiesCache=v?JSON.parse(v):{}}catch{_galaxiesCache={}}
