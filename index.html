@@ -550,7 +550,7 @@ async function saveGalaxies(g){
   _galaxiesCache=g;
   try{localStorage.setItem(GLK,JSON.stringify(g))}catch(e){}
   try{
-    await sbFetch('galaxies?id=gte.0',{method:'DELETE',headers:SB_HDR});
+    await sbFetch('galaxies?category=gte.',{method:'DELETE',headers:SB_HDR});
     const e=Object.entries(g);
     if(e.length)await sbFetch('galaxies',{method:'POST',headers:SB_HDR,body:JSON.stringify(e.map(([cat,d])=>({category:cat,name:d.name||cat,ai_generated:d.aiGenerated||false})))});
   }catch(e){}
