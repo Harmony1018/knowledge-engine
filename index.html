@@ -391,19 +391,19 @@ body {
 }
 .node-label {
   font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;
-  letter-spacing:1px; color:#fff;
+  letter-spacing:0; color:#ff0;
   transform:translate(-50%,-50%);
-  background:#111; border:1px solid rgba(255,255,255,.18);
-  border-radius:6px; padding:3px 14px;
-  white-space:pre-line; text-align:center; line-height:1.35;
-  font-weight:700;
+  background:#000; border:2px solid #f00;
+  border-radius:8px; padding:6px 16px;
+  white-space:pre-line; text-align:center; line-height:1.3;
+  font-weight:900;
   transition:none;
 }
 .hub-label {
-  font-weight:900; padding:5px 18px;
-  color:#ffe099;
-  background:#111; border:1px solid rgba(255,200,80,.25);
-  border-radius:8px;
+  font-weight:900; padding:8px 22px;
+  color:#0f0;
+  background:#000; border:3px solid #ff0;
+  border-radius:10px;
   transition:none;
 }
 
@@ -1586,7 +1586,7 @@ function animate(){
       const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
       if(v.z<1){
         const dist=camera.position.distanceTo(new THREE.Vector3(nl.pos.x,nl.pos.y,nl.pos.z));
-        const baseScale=nl.isHub?220:130;
+        const baseScale=nl.isHub?380:200;
         const fs=Math.max(nl.isHub?14:10,Math.min(nl.isHub?80:48,baseScale/dist));
         nl.div.style.left=x+'px';nl.div.style.top=y+'px';
         nl.div.style.fontSize=fs+'px';
