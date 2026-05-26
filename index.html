@@ -1154,7 +1154,7 @@ for(let i=0;i<sc;i++){
 sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
 sg.setAttribute('color',new THREE.BufferAttribute(sc2,3));
 sg.setAttribute('size',new THREE.BufferAttribute(ss,1));
-const sm=new THREE.PointsMaterial({size:.08,vertexColors:true,transparent:true,opacity:.9,blending:THREE.AdditiveBlending,depthWrite:false,sizeAttenuation:true});
+const sm=new THREE.PointsMaterial({size:.08,vertexColors:true,transparent:true,opacity:.9,blending:THREE.NormalBlending,depthWrite:false,sizeAttenuation:true});
 const stars=new THREE.Points(sg,sm);starField.add(stars);
 
 // 大亮星
@@ -1167,7 +1167,7 @@ for(let i=0;i<20;i++){
   g.addColorStop(0,col);g.addColorStop(.2,col.replace(',1)',',.5)'));g.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle=g;ctx.fillRect(0,0,32,32);
   const tex=new THREE.CanvasTexture(c);
-  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,blending:THREE.AdditiveBlending,depthWrite:false,transparent:true}));
+  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,blending:THREE.NormalBlending,depthWrite:false,transparent:true}));
   sprite.position.set(r*Math.sin(ph)*Math.cos(th),r*Math.sin(ph)*Math.sin(th),r*Math.cos(ph));
   sprite.scale.set(.3+Math.random()*.8,.3+Math.random()*.8,1);
   starField.add(sprite);
@@ -1234,7 +1234,7 @@ function createThickLink(p1,p2,color,radius){
   const glowR=Math.max(.006,radius*2.2);
   const core=new THREE.Mesh(
     new THREE.CylinderGeometry(coreR*.7,coreR,len,5,1),
-    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.35,blending:THREE.AdditiveBlending,depthWrite:false})
+    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.35,blending:THREE.NormalBlending,depthWrite:false})
   );
   core.quaternion.setFromUnitVectors(up,norm);
   core.userData.isGlow=false;
@@ -1243,7 +1243,7 @@ function createThickLink(p1,p2,color,radius){
   // Glow aura（辉光外层）
   const glow=new THREE.Mesh(
     new THREE.CylinderGeometry(glowR*.7,glowR,len,5,1),
-    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.07,blending:THREE.AdditiveBlending,depthWrite:false})
+    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.07,blending:THREE.NormalBlending,depthWrite:false})
   );
   glow.quaternion.setFromUnitVectors(up,norm);
   glow.userData.isGlow=true;
@@ -1304,7 +1304,7 @@ function createHoloSphere(pos, item, index, total, isHub, categoryName){
   const oc=8+Math.floor(Math.random()*8);const op=[];
   for(let i=0;i<oc;i++){const a=i/oc*Math.PI*2;const rd=base*1.6*.85;op.push(Math.cos(a)*rd,Math.sin(a)*rd,0)}
   const ob=new THREE.BufferGeometry();ob.setAttribute('position',new THREE.Float32BufferAttribute(op,3));
-  const orb=new THREE.Points(ob,new THREE.PointsMaterial({color:isHub?0xffcc66:0x66eeff,size:isHub?0.03:0.02,transparent:true,opacity:.5,blending:THREE.AdditiveBlending}));group.add(orb);
+  const orb=new THREE.Points(ob,new THREE.PointsMaterial({color:isHub?0xffcc66:0x66eeff,size:isHub?0.03:0.02,transparent:true,opacity:.5,blending:THREE.NormalBlending}));group.add(orb);
 
   return{group,wire,ring:group.children[group.children.length-2],orb,phase:Math.random()*Math.PI*2,baseSize:base,isHub};
 }
@@ -1422,36 +1422,40 @@ function rebuild(){
 
     if(isHub){
       lc.width=512;lc.height=256;
-      lctx.font='bold 52px "Microsoft YaHei","Noto Sans SC",sans-serif';
-      lctx.shadowColor='rgba(255,180,50,.6)';lctx.shadowBlur=20;
       lctx.fillStyle='#ffcc66';
+      lctx.font='bold 52px "Microsoft YaHei","Noto Sans SC",sans-serif';
+      lctx.shadowColor='rgba(0,0,0,.8)';lctx.shadowBlur=12;
+      lctx.strokeStyle='rgba(0,0,0,.6)';lctx.lineWidth=4;
       const labelText=catName.length>5?catName.slice(0,5)+'…':catName;
+      lctx.strokeText(labelText,256,128);
       lctx.fillText(labelText,256,128);
       const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
-      const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
+      const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false}));
       ls.position.set(0,0,0);
       ls.scale.set(h.baseSize*2.0,h.baseSize*1.0,1);
       h.group.add(ls);
     } else {
-      // 多行标签：标题每 6 字一行，最多 3 行
-      const fullTitle=(node.title||'').slice(0,18);
+      const fullTitle=(node.title||"").slice(0,18);
       const lines=[];
       for(let li=0;li<fullTitle.length;li+=6){
         lines.push(fullTitle.slice(li,li+6));
         if(lines.length>=3)break;
       }
       lc.width=512;lc.height=lines.length===1?128:lines.length===2?200:280;
-      lctx.font='bold 46px "Microsoft YaHei","Noto Sans SC",sans-serif';
-      lctx.shadowColor='rgba(0,0,0,.9)';lctx.shadowBlur=18;
       lctx.fillStyle='#ffffff';
+      lctx.font='bold 46px "Microsoft YaHei","Noto Sans SC",sans-serif';
+      lctx.shadowColor='rgba(0,0,0,.9)';lctx.shadowBlur=14;
+      lctx.strokeStyle='rgba(0,0,0,.7)';lctx.lineWidth=3;
       const lineH=58;
       const totalH=(lines.length-1)*lineH;
       lines.forEach((ln,i)=>{
-        lctx.fillText(ln,256,lc.height/2-totalH/2+i*lineH);
+        const y=lc.height/2-totalH/2+i*lineH;
+        lctx.strokeText(ln,256,y);
+        lctx.fillText(ln,256,y);
       });
       const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
-      const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
-      ls.position.set(0,-h.baseSize*.5,0);
+      const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false}));
+      ls.position.set(0,0,0);
       const spriteH=lines.length===1?0.7:lines.length===2?1.1:1.5;
       ls.scale.set(h.baseSize*2.0,h.baseSize*spriteH,1);
       h.group.add(ls);
@@ -1484,7 +1488,7 @@ function rebuild(){
       const gg=new THREE.BufferGeometry();
       gg.setAttribute('position',new THREE.Float32BufferAttribute(glowPos,3));
       gg.setAttribute('color',new THREE.Float32BufferAttribute(glowColors,3));
-      linkGlowLines=new THREE.LineSegments(gg,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.08,blending:THREE.AdditiveBlending,depthWrite:false}));
+      linkGlowLines=new THREE.LineSegments(gg,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.08,blending:THREE.NormalBlending,depthWrite:false}));
       scene.add(linkGlowLines);
     }
   }
