@@ -464,13 +464,6 @@ body {
   <div class="fg"><label>TAGS（逗号分隔）</label><input id="ipt-tags" placeholder="AI, 编程, 设计"></div>
 
   <div style="margin:14px 0;border-top:1px solid rgba(255,255,255,.06);padding-top:16px">
-    <div class="fg"><label>🔗 一键导入链接</label>
-      <div style="display:flex;gap:8px">
-        <input id="ipt-import-url" placeholder="粘贴网页链接…" style="flex:1">
-        <button onclick="importUrl()" style="padding:0 18px;border:1px solid rgba(255,255,255,.1);border-radius:6px;background:rgba(0,0,0,.5);color:rgba(255,255,255,.5);cursor:pointer;white-space:nowrap;font-size:13px">导入</button>
-      </div>
-      <div id="importUrlStatus" style="font-size:11px;color:rgba(255,255,255,.25);margin-top:6px"></div>
-    </div>
     <div class="fg"><label>📝 AI 批量导入（粘贴对话/笔记/文章）</label>
       <textarea id="ipt-bulk" placeholder="粘贴 AI 对话记录、读书笔记、长文章…&#10;AI 会自动拆分为多条知识并逐条入库" style="min-height:100px"></textarea>
       <div id="bulkStatus" style="font-size:11px;color:rgba(255,255,255,.25);margin:6px 0"></div>
@@ -679,30 +672,50 @@ const DEMO_ITEMS = [
 // ===== 演示数据定义 =====
 // 初始化已在 initData() 中自动处理
 
-// ===== AI 增强：自动分类 + 总结 + 关联 =====
+// ===== AI 增强：自动分类 + 总结 + 标签 + 关联 =====
+function tryParseAIJson(text) {
+  // 清理 markdown 代码块
+  let t = text.trim();
+  t = t.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  // 尝试直接解析
+  try { return JSON.parse(t); } catch(e) {}
+  // 尝试提取第一个 JSON 对象
+  const m = t.match(/\{[\s\S]*\}/);
+  if (m) { try { return JSON.parse(m[0]); } catch(e) {} }
+  return null;
+}
+
 async function aiEnhance(item, allItems) {
   const apiKey = loadAK();
   if (!apiKey) return false;
 
-  const existing = allItems
+  // 只取同分类或相似度最高的 10 条作为上下文（避免 token 溢出）
+  const fp = getFP(item);
+  const scored = allItems
     .filter(i => i.id !== item.id)
-    .map(i => `{"id":${i.id},"title":"${(i.title||'').replace(/"/g,'\\"')}","category":"${(i.category||'').replace(/"/g,'\\"')}"}`)
-    .join(',\n');
+    .map(i => ({ item: i, score: rel(fp, getFP(i)) }))
+    .sort((a, b) => b.score - a.score);
+  const context = scored.slice(0, 10);
+  const existing = context.length
+    ? context.map(({item: i, score: s}) => `"${i.title}"（分类:${i.category||'未分类'},相似度:${(s*100)|0}%）`).join('\n')
+    : '（空知识库）';
 
-  const prompt = `你是知识组织助手。分析新知识点并归类。
+  const prompt = `你是知识组织专家。分析以下内容，生成结构化元数据。
 
-新知识点：
-标题：${item.title}
-内容：${item.content}
+【标题】${item.title}
+【正文】${(item.content||'').slice(0, 3000)}
+${item.tags && item.tags.length ? '【用户标签】' + item.tags.join(', ') : ''}
 
-已有知识库：
-[${existing}]
+【已有知识（按相似度排序）】
+${existing}
 
-严格返回 JSON（不要多余文字）：
+请推导并返回 JSON（勿加解释）：
 {
-  "category": "简短分类名，2-4 字，如：英语学习、编程技术、AI人工、设计美学、数据科学",
-  "summary": "一句话总结（20 字内）",
-  "relatedIds": [关联的已有 ID 数组，不相关则为 []]
+  "category": "最合适的 2-5 字分类。常见分类参考：人工智能｜编程技术｜数据科学｜设计美学｜英语学习｜历史人文｜商业财经｜心理学｜医学健康｜物理天文｜数学逻辑｜哲学思辨｜法律政治｜音乐艺术｜影视文学｜游戏动漫｜美食烹饪｜旅行地理｜运动健身｜生活技巧｜情感人际｜教育学习｜其他",
+  "tags": ["精确标签1","标签2","标签3","标签4","标签5"],
+  "summary": "15-30 字精准摘要，保留关键名词",
+  "polishedTitle": "提炼后的标题（去除冗余，保留核心信息）",
+  "relatedIds": [与新知点直接相关的已有知识 ID]
 }`;
 
   try {
@@ -712,18 +725,25 @@ async function aiEnhance(item, allItems) {
       body:JSON.stringify({
         model:'deepseek-chat',
         messages:[
-          {role:'system',content:'你是一个知识组织AI，只返回有效JSON。'},
+          {role:'system',content:'你是知识管理专家。能精准识别文本领域、提取关键概念、判断知识关联。只返回有效 JSON。'},
           {role:'user',content:prompt}
         ],
-        temperature:.3,max_tokens:500
+        temperature:.25, max_tokens:800
       })
     });
     if (!res.ok) return false;
     const data = await res.json();
-    const result = JSON.parse(data.choices[0].message.content);
-    item.category = result.category && result.category !== '未分类' ? result.category : item.category || '未分类';
+    const result = tryParseAIJson(data.choices[0].message.content);
+    if (!result) return false;
+
+    item.category = result.category || item.category || '未分类';
     item.summary = result.summary || '';
+    item.tags = result.tags || item.tags || [];
     item.relatedIds = Array.isArray(result.relatedIds) ? result.relatedIds : [];
+    // AI 优化标题
+    if (result.polishedTitle && result.polishedTitle.length <= 50) {
+      item.title = result.polishedTitle;
+    }
     return true;
   } catch(e) {
     console.log('AI enhance failed:', e);
@@ -809,262 +829,6 @@ async function addItem(){
   generateGalaxyNames(load());
 }
 
-// ===== 一键导入链接（纯前端，无需后端）=====
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
-const CORS_PROXY2 = 'https://corsproxy.io/?';
-
-function extractMetaContent(html, prop) {
-  const re = new RegExp(`<meta[^>]+(?:name|property)=["']${prop}["'][^>]+content=["']([^"']+)["']`, 'i');
-  const m = html.match(re);
-  if (m) return m[1];
-  const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["']${prop}["']`, 'i');
-  const m2 = html.match(re2);
-  if (m2) return m2[1];
-  return null;
-}
-
-function htmlToText(html) {
-  return html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&nbsp;|&amp;|&lt;|&gt;|&quot;/g, ' ')
-    .replace(/\s+/g, ' ').trim();
-}
-
-// ===== 抖音链接识别 =====
-function isDouyinUrl(url) {
-  return /(douyin\.com|iesdouyin\.com)/i.test(url);
-}
-
-function parseDouyinHtml(html, url) {
-  // 从 <title> 提取视频标题（去掉抖音后缀）
-  let title = '';
-  const tm = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  if (tm) {
-    title = tm[1].trim()
-      .replace(/[#＃]\s*/g, '')
-      .replace(/\s*[-–—|]\s*抖音.*$/i, '')
-      .replace(/\s*[-–—|]\s*Douyin.*$/i, '')
-      .replace(/^[@]?抖音\s*[-–—|]*\s*/i, '')
-      .trim();
-  }
-
-  // 尝试从 meta 标签提取描述和作者
-  let desc = extractMetaContent(html, 'description') || extractMetaContent(html, 'og:description') || '';
-  let author = extractMetaContent(html, 'author') || '';
-
-  // 从 URL 提取视频 ID
-  let videoId = '';
-  const vm = url.match(/(?:video|note|modal_id)[=/](\d+)/i);
-  if (vm) videoId = vm[1];
-
-  // 尝试解析页面内嵌的渲染数据
-  let extraInfo = '';
-  const renderData = html.match(/<script[^>]*id="RENDER_DATA"[^>]*>([\s\S]*?)<\/script>/i);
-  if (renderData) {
-    try {
-      const decoded = decodeURIComponent(renderData[1]);
-      const jsonMatch = decoded.match(/\{[^}]*"aweme"\s*:\s*\{[^}]*"desc"\s*:\s*"([^"]*)"/);
-      if (jsonMatch) {
-        if (!desc) desc = jsonMatch[1];
-      }
-    } catch(e) {}
-  }
-
-  // 尝试从 window._ROUTER_DATA 提取
-  const routerData = html.match(/window\._ROUTER_DATA\s*=\s*(\{[\s\S]*?\});/i);
-  if (routerData) {
-    try {
-      const data = JSON.parse(routerData[1]);
-      const loc = (data.loaderData || data)['video_(id)'] || '';
-    } catch(e) {}
-  }
-
-  // 构建格式化的内容
-  let content = '';
-  if (title) content += '📹 视频标题：' + title + '\n';
-  if (author) content += '👤 作者：' + author + '\n';
-  if (videoId) content += '🆔 视频ID：' + videoId + '\n';
-  if (desc) content += '📝 描述：' + desc + '\n';
-  content += '\n🔗 来源：' + url;
-
-  return { title: title || '抖音视频', content: content || url, desc, author, videoId };
-}
-
-async function importUrl(){
-  const url=document.getElementById('ipt-import-url').value.trim();
-  if(!url)return;
-  const st=document.getElementById('importUrlStatus');
-  const isDouyin = isDouyinUrl(url);
-  const apiKey = loadAK();
-
-  // ===== 抖音链接：尝试抓取标题 → AI 结构化 =====
-  if (isDouyin) {
-    if (!apiKey) {
-      st.textContent = '⚠️ 抖音链接需要配置 DeepSeek API Key 才能导入，请在设置中填入 Key';
-      return;
-    }
-
-    // 尝试多种方式获取抖音页面（拿到 title 就行）
-    st.textContent = '⏳ 正在获取抖音视频信息...';
-    let pageTitle = '';
-    let pageHtml = '';
-
-    // 方式1：直接 fetch
-    try {
-      const r = await fetch(url, { mode: 'cors', signal: AbortSignal.timeout(5000) });
-      if (r.ok) pageHtml = await r.text();
-    } catch(e) {}
-
-    // 方式2：CORS 代理1
-    if (!pageHtml) {
-      try {
-        const r = await fetch(CORS_PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
-        if (r.ok) pageHtml = await r.text();
-      } catch(e) {}
-    }
-
-    // 方式3：CORS 代理2
-    if (!pageHtml) {
-      try {
-        const r = await fetch(CORS_PROXY2 + encodeURIComponent(url), { signal: AbortSignal.timeout(10000) });
-        if (r.ok) pageHtml = await r.text();
-      } catch(e) {}
-    }
-
-    // 从页面中提取标题
-    if (pageHtml) {
-      const tm = pageHtml.match(/<title[^>]*>([^<]+)<\/title>/i);
-      if (tm) {
-        pageTitle = tm[1].trim()
-          .replace(/[#＃]\s*/g, '')
-          .replace(/\s*[-–—|]\s*抖音.*$/i, '')
-          .replace(/^[@]?抖音\s*[-–—|]*\s*/i, '')
-          .trim();
-      }
-      // 尝试从 meta 提取描述
-      if (!pageTitle) {
-        pageTitle = extractMetaContent(pageHtml, 'og:title') || extractMetaContent(pageHtml, 'description') || '';
-      }
-    }
-
-    // 把抓到的信息（或 URL）发给 AI 生成结构化内容
-    st.textContent = pageTitle ? '⏳ AI 正在分析：' + pageTitle.slice(0, 20) + '...' : '⏳ AI 正在分析链接...';
-    try {
-      const aiPrompt = pageTitle
-        ? `根据以下抖音视频标题，整理成结构化知识条目。\n\n视频链接：${url}\n视频标题：${pageTitle}\n\n严格返回 JSON（不要多余文字）：\n{"title":"优化后的标题（保留原标题核心信息）","content":"用100-200字描述这个视频可能的内容（根据标题推断）","category":"2-4字分类（搞笑娱乐、知识科普、美食教程、科技数码、旅行生活、音乐舞蹈、运动健身、情感语录、新闻资讯）","tags":["标签1","标签2","标签3"],"summary":"一句话概括"}`
-        : `这是一条抖音链接：${url}\n\n无法获取页面内容，请根据链接格式生成一个合理的临时知识条目。\n\n严格返回JSON：\n{"title":"抖音视频收藏","content":"链接：${url}\\n\\n（请手动补充视频内容描述）","category":"短视频收藏","tags":["抖音","短视频"],"summary":"抖音视频链接"}`;
-
-      const ai = await fetch('https://api.deepseek.com/chat/completions', {
-        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
-        body:JSON.stringify({
-          model:'deepseek-chat',
-          messages:[{role:'system',content:'你是一个内容整理AI，只返回有效JSON，不要多余文字。'},{role:'user',content:aiPrompt}],
-          temperature:.3, max_tokens:800
-        })
-      });
-      if (!ai.ok) throw new Error('API 状态 ' + ai.status);
-      const d = await ai.json();
-      const r = JSON.parse(d.choices[0].message.content);
-      document.getElementById('ipt-title').value = r.title || pageTitle || '抖音视频';
-      document.getElementById('ipt-content').value = (r.content || '') + '\n\n🔗 ' + url;
-      document.getElementById('ipt-tags').value = (r.tags || ['抖音','短视频']).join(', ');
-      st.textContent = pageTitle ? '✅ 已提取视频信息，请确认后点「存入知识宇宙」' : '⚠️ 未能获取页面详情，已生成模板，请手动补充内容';
-    } catch(e) {
-      // AI 也失败了，至少填入抓到的标题
-      if (pageTitle) {
-        document.getElementById('ipt-title').value = pageTitle;
-        document.getElementById('ipt-content').value = '🔗 ' + url;
-        document.getElementById('ipt-tags').value = '抖音, 短视频';
-        st.textContent = '⚠️ AI 处理失败，已填入页面标题，请手动补充内容';
-      } else {
-        st.textContent = '⚠️ 请求失败（' + e.message + '），请检查 API Key 和网络';
-      }
-    }
-    return;
-  }
-
-  // ===== 以下为非抖音链接的通用逻辑 =====
-  st.textContent = '⏳ 正在获取链接内容...';
-
-  async function tryFetch(u) {
-    try {
-      const r = await fetch(u, { mode: 'cors', signal: AbortSignal.timeout(8000) });
-      if (r.ok) return await r.text();
-    } catch(e) {}
-    return null;
-  }
-
-  try {
-    let html = await tryFetch(url);
-    if (!html) {
-      st.textContent = '⏳ 通过代理获取...';
-      let pr;
-      try {
-        pr = await fetch(CORS_PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(15000) });
-        if (!pr.ok) throw new Error('代理1失败');
-      } catch(e) {
-        st.textContent = '⏳ 切换备用代理...';
-        pr = await fetch(CORS_PROXY2 + encodeURIComponent(url), { signal: AbortSignal.timeout(15000) });
-        if (!pr.ok) throw new Error('代理获取失败');
-      }
-      html = await pr.text();
-    }
-    if (!html || html.length < 50) throw new Error('内容过短');
-
-    // 解析标题
-    let title = extractMetaContent(html, 'og:title') || extractMetaContent(html, 'twitter:title') || '';
-    if (!title) {
-      const tm = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-      if (tm) title = tm[1].trim();
-    }
-    // 解析描述
-    let desc = extractMetaContent(html, 'description') || extractMetaContent(html, 'og:description') || '';
-    // 提取正文
-    const body = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-    const text = htmlToText(body ? body[1] : html).slice(0, 5000);
-
-    let result = { title: title || url, content: desc ? desc + '\n\n' + text : text, tags: [] };
-
-    // 如果配置了 DeepSeek Key，用 AI 结构化
-    const apiKey2 = loadAK();
-    if (apiKey2 && title) {
-      st.textContent='⏳ AI 结构化中...';
-      try {
-        const ai = await fetch('https://api.deepseek.com/chat/completions', {
-          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey2},
-          body:JSON.stringify({
-            model:'deepseek-chat',
-            messages:[{role:'system',content:'你是一个网页内容整理助手。分析内容返回JSON，不要多余文字。'},{role:'user',content:`标题：${title}\n内容：${text.slice(0,2000)}\n\n返回JSON：\n{"title":"优化后的标题","category":"2-4字分类","tags":["标签1","标签2"],"summary":"一句话摘要"}`}],
-            temperature:.3, max_tokens:500
-          })
-        });
-        if (ai.ok) {
-          const d = await ai.json();
-          try { const r = JSON.parse(d.choices[0].message.content);
-            result.title = r.title || title;
-            result.category = r.category || '';
-            result.tags = r.tags || [];
-            result.summary = r.summary || '';
-          } catch(e) {}
-        }
-      } catch(e) {}
-    }
-
-    document.getElementById('ipt-title').value = result.title || '';
-    document.getElementById('ipt-content').value = result.content || '';
-    if (result.tags && result.tags.length) document.getElementById('ipt-tags').value = result.tags.join(', ');
-    st.textContent = '✅ 内容已提取，请确认后点「存入知识宇宙」';
-  } catch(e) {
-    st.textContent = '❌ 无法获取该链接（浏览器跨域限制），可手动粘贴内容或尝试配置 DeepSeek API Key 后重试';
-  }
-}
-
 // ===== AI 批量导入 =====
 async function bulkImport(){
   const text=document.getElementById('ipt-bulk').value.trim();
@@ -1080,7 +844,11 @@ async function bulkImport(){
       body:JSON.stringify({model:'deepseek-chat',messages:[{role:'system',content:'你是一个知识整理AI，只返回有效JSON数组。'},{role:'user',content:'将以下文本拆分为多个独立知识点。每个知识点包含 title(标题)、content(完整原文段落)、summary(15字内摘要)、category(2-4字分类)、tags(3-5个标签)。如果原文短(<100字)作为单条。\n\n文本：\n'+text.slice(0,8000)+'\n\n严格返回JSON数组：\n[{"title":"...","summary":"...","category":"...","content":"...","tags":["...","..."]}]'}],temperature:.3,max_tokens:2000})});
     if(!res.ok){st.textContent='❌ API错误('+res.status+')';return}
     const d=await res.json(),msg=d.choices[0].message.content;
-    let entries;try{entries=JSON.parse(msg)}catch(e){const m=msg.match(/\[\s*\{[\s\S]*\}\s*\]/);if(m)entries=JSON.parse(m[0]);else throw e}
+    let entries = tryParseAIJson(msg);
+    if (!entries || !Array.isArray(entries)) {
+      const m = msg.match(/\[\s*\{[\s\S]*\}\s*\]/);
+      if (m) entries = tryParseAIJson(m[0]);
+    }
     if(!Array.isArray(entries)||!entries.length){st.textContent='❌ AI 解析失败，请重试';return}
     const items=load();let added=0;
     for(const e of entries){
