@@ -1451,7 +1451,7 @@ function rebuild(){
       for(let ci=0;ci<t.length;ci+=6)chunks.push(t.slice(ci,ci+6));
       labelText=chunks.join('\n');
     }
-    _nodeLabels.push({pos:pos.clone(), text:labelText, isHub, category:catName, nodeId:node.id});
+    _nodeLabels.push({pos:new THREE.Vector3(pos.x,pos.y,pos.z), text:labelText, isHub, category:catName, nodeId:node.id});
     allMeshes.push({group:h.group, nodeId:node.id, data:h, isHub, category:catName});
 
     });
@@ -1577,7 +1577,7 @@ function animate(){
   if(window._nodeLabels){
     window._nodeLabels.forEach(nl=>{
       if(!nl.div)return;
-      const v=nl.pos.clone();
+      const v=new THREE.Vector3(nl.pos.x,nl.pos.y,nl.pos.z);
       v.project(camera);
       const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
       if(v.z<1){nl.div.style.left=x+'px';nl.div.style.top=y+'px';nl.div.style.opacity=Math.max(.1,Math.min(1,1-Math.abs(v.z)*1.2))}
