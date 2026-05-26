@@ -1339,8 +1339,7 @@ function updateLabelPositions(){
   const cats=getCategoryCenters();
   cats.forEach(cat=>{
     const div=document.createElement('div');div.className='slabel cat-label';
-    const gname=getGalaxyName(cat.name);
-    div.textContent=gname||cat.name;
+    div.textContent=cat.name;
     el.appendChild(div);cat.div=div;
   });
   window._catLabels=cats;
@@ -1393,11 +1392,11 @@ function populateGalaxySelector(){
   const sel=document.getElementById('galaxySelector');
   if(!sel)return;
   const galaxies=loadGalaxies();
-  sel.innerHTML='<option value="__all__">⟐ 全域</option>';
+  sel.innerHTML='<option value="__all__">⟐ 全部分类</option>';
   Object.keys(galaxies).forEach(cat=>{
     const g=galaxies[cat];
-    const name=g&&g.name?g.name:cat;
-    const opt=document.createElement('option');opt.value=cat;opt.textContent='◈ '+name;
+    const name=cat;
+    const opt=document.createElement('option');opt.value=cat;opt.textContent=name;
     sel.appendChild(opt);
   });
 }
@@ -1467,7 +1466,7 @@ function rebuild(){
     // 标签数据收集（由 CSS overlay 渲染，保证文字完美居中）
     let labelText;
     if(isHub){
-      labelText=galaxyName.length>5?galaxyName.slice(0,5)+'…':galaxyName;
+      labelText=catName.length>5?catName.slice(0,5)+'…':catName;
     } else {
       const t=(node.title||'').slice(0,18);
       const chunks=[];
@@ -1586,7 +1585,8 @@ function animate(){
   }
 
   controls.update();
-  // 更新分类与节点标签屏幕位置
+  renderer.render(scene,camera);
+  // 更新分类与节点标签屏幕位置（render之后更新，不阻塞WebGL）
   const w2=innerWidth/2,h2=innerHeight/2;
   if(window._catLabels){
     window._catLabels.forEach(cat=>{
@@ -1616,7 +1616,6 @@ function animate(){
     });
   }
 
-  renderer.render(scene,camera);
 }
 
 // ===== 自适应 =====
