@@ -1580,8 +1580,8 @@ function animate(){
       const v=new THREE.Vector3(nl.pos.x,nl.pos.y,nl.pos.z);
       v.project(camera);
       const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
-      if(v.z<1){nl.div.style.left=x+'px';nl.div.style.top=y+'px';nl.div.style.opacity=Math.max(.6,Math.min(1,1-Math.abs(v.z)*.5))}
-      else{nl.div.style.opacity='0'}
+      if(v.z<1){nl.div.style.left=x+'px';nl.div.style.top=y+'px';nl.div.style.opacity="1"}
+      else{nl.div.style.display="none"}
     });
   }
 
