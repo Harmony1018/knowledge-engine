@@ -1037,52 +1037,62 @@ function getGraphData(){
   const items=load().map(migrate);
   const nodes=items.map(i=>({id:i.id,title:i.title,category:i.category,summary:i.summary,content:(i.content||'').slice(0,80)}));
   const links=[];const linked=new Set();
-  // Group by category
-  const catGroups={};
-  items.forEach(item=>{const cat=item.category||'未分类';if(!catGroups[cat])catGroups[cat]=[];catGroups[cat].push(item)});
-  // Within each category: star topology (hub → leaves)
-  Object.values(catGroups).forEach(group=>{
-    if(group.length<2)return;
-    const scored=group.map(item=>({item,score:hubScore(item,group)}));
-    scored.sort((a,b)=>b.score-a.score);
-    const hub=scored[0].item;
-    group.forEach(item=>{
-      if(item.id===hub.id)return;
-      const key=Math.min(hub.id,item.id)+'-'+Math.max(hub.id,item.id);
-      if(linked.has(key))return;
+
+  if (items.length < 2) return { nodes, links };
+
+  // 为每个节点找到最相似的节点并连线（不分类别）
+  const SIM_THRESHOLD = 0.04; // 最低相似度阈值
+  const MAX_LINKS_PER_NODE = 3; // 每个节点最多连几条
+
+  items.forEach(item => {
+    const fp1 = getFP(item);
+    const candidates = items
+      .filter(other => other.id !== item.id)
+      .map(other => ({ id: other.id, score: rel(fp1, getFP(other)) }))
+      .sort((a, b) => b.score - a.score);
+
+    // 取相似度最高的几个，但要超过阈值
+    let count = 0;
+    for (const c of candidates) {
+      if (count >= MAX_LINKS_PER_NODE) break;
+      if (c.score < SIM_THRESHOLD) break;
+
+      const key = Math.min(item.id, c.id) + '-' + Math.max(item.id, c.id);
+      if (linked.has(key)) continue;
+
       linked.add(key);
-      const sim=rel(getFP(hub),getFP(item));
-      links.push({source:hub.id,target:item.id,strength:Math.max(.12,Math.round(sim*100)/100)||.25});
-    });
-  });
-  // Cross-category: hub-to-hub (similarity-based, sparse)
-  const hubs=Object.keys(catGroups).map(cat=>{
-    const g=catGroups[cat];
-    if(!g.length)return null;
-    const scored=g.map(item=>({item,score:hubScore(item,g)}));
-    scored.sort((a,b)=>b.score-a.score);
-    return scored[0].item;
-  }).filter(Boolean);
-  for(let i=0;i<hubs.length;i++){
-    for(let j=i+1;j<hubs.length;j++){
-      const sim=rel(getFP(hubs[i]),getFP(hubs[j]));
-      if(sim>.025){
-        const key=Math.min(hubs[i].id,hubs[j].id)+'-'+Math.max(hubs[i].id,hubs[j].id);
-        if(!linked.has(key)){linked.add(key);links.push({source:hubs[i].id,target:hubs[j].id,strength:Math.round(sim*100)/100})}
-      }
+      const otherCat = items.find(i => i.id === c.id)?.category;
+      const crossCat = (item.category !== otherCat) ? 0.15 : 0; // 跨分类加分
+      links.push({
+        source: item.id,
+        target: c.id,
+        strength: Math.round((c.score + crossCat) * 100) / 100
+      });
+      count++;
     }
-  }
-  // Cross-category explicit relatedIds (user/AI defined)
-  items.forEach(item=>{
-    (item.relatedIds||[]).forEach(rid=>{
-      const target=items.find(x=>x.id===rid);
-      if(!target)return;
-      if((item.category||'未分类')===(target.category||'未分类'))return;
-      const key=Math.min(item.id,rid)+'-'+Math.max(item.id,rid);
-      if(!linked.has(key)){linked.add(key);links.push({source:item.id,target:rid,strength:.45})}
+  });
+
+  // 补充：AI/用户指定的关联（优先级最高）
+  items.forEach(item => {
+    (item.relatedIds || []).forEach(rid => {
+      const target = items.find(x => x.id === rid);
+      if (!target) return;
+      const key = Math.min(item.id, rid) + '-' + Math.max(item.id, rid);
+      if (linked.has(key)) {
+        // 已存在：提升强度
+        const existing = links.find(l =>
+          (l.source === item.id && l.target === rid) ||
+          (l.source === rid && l.target === item.id)
+        );
+        if (existing) existing.strength = Math.min(1, existing.strength + 0.3);
+      } else {
+        linked.add(key);
+        links.push({ source: item.id, target: rid, strength: 0.55 });
+      }
     });
   });
-  return{nodes,links};
+
+  return { nodes, links };
 }
 
 // ============================================================
@@ -1371,19 +1381,19 @@ function rebuild(){
     nodeGroup.add(h.group);
     allMeshes.push({group:h.group,nodeId:node.id,data:h});
 
-    // 标题标签（在星球内部，纯白高对比度）
-    const lc=document.createElement('canvas');lc.width=512;lc.height=128;
+    // 标题标签
+    const lc=document.createElement('canvas');lc.width=512;lc.height=256;
     const lctx=lc.getContext('2d');
     lctx.textAlign='center';lctx.textBaseline='middle';
-    lctx.font='bold 34px "Microsoft YaHei","Noto Sans SC",sans-serif';
-    lctx.shadowColor='rgba(0,0,0,1)';lctx.shadowBlur=24;
+    lctx.font='bold 56px "Microsoft YaHei","Noto Sans SC",sans-serif';
+    lctx.shadowColor='rgba(0,0,0,1)';lctx.shadowBlur=32;
     lctx.fillStyle='#ffffff';
-    const labelText=(node.title||'').slice(0,8);
-    lctx.fillText(labelText,256,64);
+    const labelText=(node.title||'').slice(0,6);
+    lctx.fillText(labelText,256,128);
     const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
     const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
     ls.position.set(0,0,0);
-    ls.scale.set(h.baseSize*1.3,h.baseSize*.45,1);
+    ls.scale.set(h.baseSize*2.2,h.baseSize*1.1,1);
     h.group.add(ls);
   });
 
