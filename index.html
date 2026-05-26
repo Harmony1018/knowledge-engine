@@ -1415,7 +1415,7 @@ function rebuild(){
     nodeGroup.add(h.group);
     allMeshes.push({group:h.group,nodeId:node.id,data:h,isHub,category:catName});
 
-    // 标签：hub 显示星系名（金色），子节点显示标题（白色）
+    // 标签：hub 显示分类名（金色），子节点显示标题（白色，支持多行）
     const lc=document.createElement('canvas');
     const lctx=lc.getContext('2d');
     lctx.textAlign='center';lctx.textBaseline='middle';
@@ -1425,24 +1425,35 @@ function rebuild(){
       lctx.font='bold 52px "Microsoft YaHei","Noto Sans SC",sans-serif';
       lctx.shadowColor='rgba(255,180,50,.6)';lctx.shadowBlur=20;
       lctx.fillStyle='#ffcc66';
-      const labelText=galaxyName.length>5?galaxyName.slice(0,5)+'…':galaxyName;
+      const labelText=catName.length>5?catName.slice(0,5)+'…':catName;
       lctx.fillText(labelText,256,128);
       const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
       const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
-      ls.position.set(0,h.baseSize*.9,0);
-      ls.scale.set(h.baseSize*2.6,h.baseSize*1.3,1);
+      ls.position.set(0,0,0);
+      ls.scale.set(h.baseSize*2.0,h.baseSize*1.0,1);
       h.group.add(ls);
     } else {
-      lc.width=512;lc.height=128;
-      lctx.font='bold 48px "Microsoft YaHei","Noto Sans SC",sans-serif';
-      lctx.shadowColor='rgba(0,0,0,.8)';lctx.shadowBlur=16;
+      // 多行标签：标题每 6 字一行，最多 3 行
+      const fullTitle=(node.title||'').slice(0,18);
+      const lines=[];
+      for(let li=0;li<fullTitle.length;li+=6){
+        lines.push(fullTitle.slice(li,li+6));
+        if(lines.length>=3)break;
+      }
+      lc.width=512;lc.height=lines.length===1?128:lines.length===2?200:280;
+      lctx.font='bold 46px "Microsoft YaHei","Noto Sans SC",sans-serif';
+      lctx.shadowColor='rgba(0,0,0,.9)';lctx.shadowBlur=18;
       lctx.fillStyle='#ffffff';
-      const labelText=(node.title||'').slice(0,6);
-      lctx.fillText(labelText,256,64);
+      const lineH=58;
+      const totalH=(lines.length-1)*lineH;
+      lines.forEach((ln,i)=>{
+        lctx.fillText(ln,256,lc.height/2-totalH/2+i*lineH);
+      });
       const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
       const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
-      ls.position.set(0,-h.baseSize*.7,0);
-      ls.scale.set(h.baseSize*2.5,h.baseSize*.8,1);
+      ls.position.set(0,-h.baseSize*.5,0);
+      const spriteH=lines.length===1?0.7:lines.length===2?1.1:1.5;
+      ls.scale.set(h.baseSize*2.0,h.baseSize*spriteH,1);
       h.group.add(ls);
     }
   });
