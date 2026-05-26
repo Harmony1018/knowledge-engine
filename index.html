@@ -505,12 +505,12 @@ body {
 
 <div class="panel" id="p-settings">
   <div class="ph"><h2>／SETTINGS</h2><button class="pc" onclick="closeP('settings')">✕</button></div>
-  <div class="sr"><label>DeepSeek API Key</label><input id="ipt-apikey" type="password" placeholder="sk-..."></div>
+  <div class="sr"><label>DeepSeek API Key</label><div><input id="ipt-apikey" type="password" placeholder="sk-..." style="width:100%"><span id="apikeyStatus" style="font-size:10px;color:rgba(255,255,255,.2);display:block;margin-top:4px"></span></div></div>
   <div class="sr"><label>星球颜色</label><div><input id="ipt-sphere-color" type="color"><span class="cval" id="sphereColorVal">#00ccff</span></div></div>
   <div class="sr"><label>界面强调色</label><div><input id="ipt-ui-color" type="color"><span class="cval" id="uiColorVal">#00ccff</span></div></div>
   <div class="sr"><label>节点数量</label><span id="setCount" style="font-size:12px;color:rgba(255,255,255,.2)">0</span></div>
   <div style="margin-top:18px;"><button class="btn-d" onclick="if(confirm('清除所有知识？')){clearAll()}">清除所有数据</button></div>
-  <div style="margin-top:12px;font-size:10px;color:rgba(255,255,255,.1)">数据存储在云端，多设备自动同步。</div>
+  <div style="margin-top:12px;font-size:10px;color:rgba(255,255,255,.1)">知识数据存储在云端，多设备自动同步。API Key 仅保存在本地设备，需每台设备单独配置。</div>
 </div>
 
 <div class="mb" id="modalBg" onclick="closeM()"></div>
@@ -811,6 +811,7 @@ async function addItem(){
 
 // ===== 一键导入链接（纯前端，无需后端）=====
 const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+const CORS_PROXY2 = 'https://corsproxy.io/?';
 
 function extractMetaContent(html, prop) {
   const re = new RegExp(`<meta[^>]+(?:name|property)=["']${prop}["'][^>]+content=["']([^"']+)["']`, 'i');
@@ -916,8 +917,16 @@ async function importUrl(){
     let html = await tryFetch(url);
     if (!html) {
       st.textContent = isDouyin ? '⏳ 通过代理获取抖音页面...' : '⏳ 通过代理获取...';
-      const pr = await fetch(CORS_PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(15000) });
-      if (!pr.ok) throw new Error('代理获取失败');
+      // 尝试两个 CORS 代理
+      let pr;
+      try {
+        pr = await fetch(CORS_PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(15000) });
+        if (!pr.ok) throw new Error('代理1失败');
+      } catch(e) {
+        st.textContent = isDouyin ? '⏳ 切换备用代理...' : '⏳ 切换备用代理...';
+        pr = await fetch(CORS_PROXY2 + encodeURIComponent(url), { signal: AbortSignal.timeout(15000) });
+        if (!pr.ok) throw new Error('代理获取失败');
+      }
       html = await pr.text();
     }
     if (!html || html.length < 50) throw new Error('内容过短');
@@ -1712,6 +1721,8 @@ onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix
   await initData();
   try{
     const s=loadAK();if(s)document.getElementById('ipt-apikey').value=s;
+    const ast=document.getElementById('apikeyStatus');
+    if(ast){ast.textContent=s?'✅ 已保存（仅本地设备）':'⚠️ 未配置（AI 功能不可用）';ast.style.color=s?'rgba(0,255,150,.5)':'rgba(255,255,255,.2)'}
     const uiColor=getTheme('ui_color','#00ccff');
     applyUITheme(uiColor);
     const sc=document.getElementById('ipt-sphere-color');if(sc)sc.value=getTheme('sphere_color','#00ccff');
@@ -1722,7 +1733,15 @@ onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix
   setTimeout(()=>document.getElementById('loading').classList.add('hidden'),600);
 })();
 
-document.getElementById('ipt-apikey')?.addEventListener('change',function(){saveAK(this.value)});
+document.getElementById('ipt-apikey')?.addEventListener('input',function(){
+  const val=this.value.trim();
+  saveAK(val);
+  const st=document.getElementById('apikeyStatus');
+  if(st){
+    if(val){st.textContent='✅ 已保存（仅本地设备）';st.style.color='rgba(0,255,150,.5)'}
+    else{st.textContent='⚠️ 未配置（AI 功能不可用）';st.style.color='rgba(255,255,255,.2)'}
+  }
+});
 document.getElementById('ipt-sphere-color')?.addEventListener('input',function(){
   const v=this.value;setTheme('sphere_color',v);
   document.getElementById('sphereColorVal').textContent=v;rebuild();
