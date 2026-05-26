@@ -1421,18 +1421,19 @@ function rebuild(){
     lctx.textAlign='center';lctx.textBaseline='middle';
 
     if(isHub){
-      lc.width=512;lc.height=256;
+      lc.width=512;lc.height=512;
       lctx.fillStyle='#ffcc66';
-      lctx.font='bold 52px "Microsoft YaHei","Noto Sans SC",sans-serif';
+      lctx.font='bold 80px "Microsoft YaHei","Noto Sans SC",sans-serif';
       lctx.shadowColor='rgba(0,0,0,.8)';lctx.shadowBlur=12;
-      lctx.strokeStyle='rgba(0,0,0,.6)';lctx.lineWidth=4;
+      lctx.strokeStyle='rgba(0,0,0,.6)';lctx.lineWidth=5;
       const labelText=catName.length>5?catName.slice(0,5)+'…':catName;
-      lctx.strokeText(labelText,256,128);
-      lctx.fillText(labelText,256,128);
+      lctx.strokeText(labelText,256,256);
+      lctx.fillText(labelText,256,256);
       const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
       const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false}));
       ls.position.set(0,0,0);
-      ls.scale.set(h.baseSize*2.0,h.baseSize*1.0,1);
+      const s=h.baseSize*1.8;
+      ls.scale.set(s,s,1);
       h.group.add(ls);
     } else {
       const fullTitle=(node.title||"").slice(0,18);
@@ -1441,23 +1442,23 @@ function rebuild(){
         lines.push(fullTitle.slice(li,li+6));
         if(lines.length>=3)break;
       }
-      lc.width=512;lc.height=lines.length===1?128:lines.length===2?200:280;
+      lc.width=512;lc.height=512;
       lctx.fillStyle='#ffffff';
-      lctx.font='bold 46px "Microsoft YaHei","Noto Sans SC",sans-serif';
+      lctx.font='bold 60px "Microsoft YaHei","Noto Sans SC",sans-serif';
       lctx.shadowColor='rgba(0,0,0,.9)';lctx.shadowBlur=14;
-      lctx.strokeStyle='rgba(0,0,0,.7)';lctx.lineWidth=3;
-      const lineH=58;
+      lctx.strokeStyle='rgba(0,0,0,.7)';lctx.lineWidth=4;
+      const lineH=72;
       const totalH=(lines.length-1)*lineH;
       lines.forEach((ln,i)=>{
-        const y=lc.height/2-totalH/2+i*lineH;
+        const y=256-totalH/2+i*lineH;
         lctx.strokeText(ln,256,y);
         lctx.fillText(ln,256,y);
       });
       const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
       const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false}));
       ls.position.set(0,0,0);
-      const spriteH=lines.length===1?0.7:lines.length===2?1.1:1.5;
-      ls.scale.set(h.baseSize*2.0,h.baseSize*spriteH,1);
+      const s=h.baseSize*1.4;
+      ls.scale.set(s,s,1);
       h.group.add(ls);
     }
   });
