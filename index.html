@@ -1040,59 +1040,68 @@ function getGraphData(){
 
   if (items.length < 2) return { nodes, links };
 
-  // 为每个节点找到最相似的节点并连线（不分类别）
-  const SIM_THRESHOLD = 0.04; // 最低相似度阈值
-  const MAX_LINKS_PER_NODE = 3; // 每个节点最多连几条
-
-  items.forEach(item => {
-    const fp1 = getFP(item);
-    const candidates = items
-      .filter(other => other.id !== item.id)
-      .map(other => ({ id: other.id, score: rel(fp1, getFP(other)) }))
-      .sort((a, b) => b.score - a.score);
-
-    // 取相似度最高的几个，但要超过阈值
-    let count = 0;
-    for (const c of candidates) {
-      if (count >= MAX_LINKS_PER_NODE) break;
-      if (c.score < SIM_THRESHOLD) break;
-
-      const key = Math.min(item.id, c.id) + '-' + Math.max(item.id, c.id);
-      if (linked.has(key)) continue;
-
-      linked.add(key);
-      const otherCat = items.find(i => i.id === c.id)?.category;
-      const crossCat = (item.category !== otherCat) ? 0.15 : 0; // 跨分类加分
-      links.push({
-        source: item.id,
-        target: c.id,
-        strength: Math.round((c.score + crossCat) * 100) / 100
-      });
-      count++;
-    }
+  // 按分类分组，找每个分类的 hub
+  const catGroups={};
+  items.forEach(item=>{const cat=item.category||'未分类';if(!catGroups[cat])catGroups[cat]=[];catGroups[cat].push(item)});
+  const catHubs={};
+  Object.entries(catGroups).forEach(([cat,group])=>{
+    if(group.length<2){catHubs[cat]=group[0].id;return}
+    const scored=group.map(item=>({item,score:hubScore(item,group)}));
+    scored.sort((a,b)=>b.score-a.score);
+    catHubs[cat]=scored[0].item.id;
   });
 
-  // 补充：AI/用户指定的关联（优先级最高）
-  items.forEach(item => {
-    (item.relatedIds || []).forEach(rid => {
-      const target = items.find(x => x.id === rid);
-      if (!target) return;
-      const key = Math.min(item.id, rid) + '-' + Math.max(item.id, rid);
-      if (linked.has(key)) {
-        // 已存在：提升强度
-        const existing = links.find(l =>
-          (l.source === item.id && l.target === rid) ||
-          (l.source === rid && l.target === item.id)
-        );
-        if (existing) existing.strength = Math.min(1, existing.strength + 0.3);
-      } else {
+  // 1) 每个分类内部：子节点连到 hub（目录结构）
+  Object.entries(catGroups).forEach(([cat,group])=>{
+    const hubId=catHubs[cat];
+    group.forEach(item=>{
+      if(item.id===hubId)return;
+      const key=Math.min(hubId,item.id)+'-'+Math.max(hubId,item.id);
+      if(!linked.has(key)){
         linked.add(key);
-        links.push({ source: item.id, target: rid, strength: 0.55 });
+        const score=rel(getFP(item),getFP(items.find(i=>i.id===hubId)));
+        links.push({source:hubId,target:item.id,strength:Math.max(.2,Math.round(score*100)/100)});
       }
     });
   });
 
-  return { nodes, links };
+  // 2) 跨分类：每个子节点找其他分类最相似的 2 个节点
+  const SIM_THRESHOLD=0.05;
+  const MAX_CROSS=2;
+  items.forEach(item=>{
+    const myCat=item.category||'未分类';
+    const fp1=getFP(item);
+    const candidates=items
+      .filter(other=>other.id!==item.id&&(other.category||'未分类')!==myCat)
+      .map(other=>({id:other.id,score:rel(fp1,getFP(other))}))
+      .sort((a,b)=>b.score-a.score);
+
+    let count=0;
+    for(const c of candidates){
+      if(count>=MAX_CROSS)break;
+      if(c.score<SIM_THRESHOLD)break;
+      const key=Math.min(item.id,c.id)+'-'+Math.max(item.id,c.id);
+      if(linked.has(key))continue;
+      linked.add(key);
+      links.push({source:item.id,target:c.id,strength:Math.round(c.score*100)/100});
+      count++;
+    }
+  });
+
+  // 3) AI/用户指定关联
+  items.forEach(item=>{
+    (item.relatedIds||[]).forEach(rid=>{
+      const target=items.find(x=>x.id===rid);
+      if(!target)return;
+      const key=Math.min(item.id,rid)+'-'+Math.max(item.id,rid);
+      if(linked.has(key)){
+        const existing=links.find(l=>(l.source===item.id&&l.target===rid)||(l.source===rid&&l.target===item.id));
+        if(existing)existing.strength=Math.min(1,existing.strength+.3);
+      }else{linked.add(key);links.push({source:item.id,target:rid,strength:.55})}
+    });
+  });
+
+  return{nodes,links};
 }
 
 // ============================================================
@@ -1245,49 +1254,59 @@ function createThickLink(p1,p2,color,radius){
   return group;
 }
 
-function createHoloSphere(pos, item, index, total){
-  const baseHue=hexToHue(getTheme('sphere_color','#00ccff'));
-  const hue=baseHue-15+Math.random()*30;
-  const color=new THREE.Color(`hsl(${hue},60%,68%)`);
-  const glow=new THREE.Color(`hsl(${hue},65%,52%)`);
+function createHoloSphere(pos, item, index, total, isHub, categoryName){
+  const baseHue = isHub ? 35 : hexToHue(getTheme('sphere_color','#00ccff'));
+  const sat = isHub ? '85%' : '60%';
+  const lit = isHub ? '62%' : '68%';
+  const hue = isHub ? baseHue : baseHue - 15 + Math.random() * 30;
+  const color=new THREE.Color(`hsl(${hue},${sat},${lit})`);
+  const glowColor = isHub ? new THREE.Color(`hsl(${hue},90%,55%)`) : new THREE.Color(`hsl(${hue},65%,52%)`);
 
   const group=new THREE.Group();
   group.position.set(pos.x,pos.y,pos.z);
 
-  const base=.28+Math.random()*.1;
+  const base = isHub ? 0.55 : (0.2 + Math.random() * 0.08);
+  const ringCount = isHub ? 3 : 1;
 
   // 内核
-  const innerMat=new THREE.MeshPhysicalMaterial({color,transparent:true,opacity:.07,metalness:0,roughness:.3,emissive:glow,emissiveIntensity:.04});
-  group.add(new THREE.Mesh(new THREE.SphereGeometry(base,24,24),innerMat));
+  const innerMat=new THREE.MeshPhysicalMaterial({color,transparent:true,opacity:isHub?0.12:0.07,metalness:0,roughness:.3,emissive:glowColor,emissiveIntensity:isHub?0.08:0.04});
+  group.add(new THREE.Mesh(new THREE.SphereGeometry(base,32,32),innerMat));
 
   // 线框
-  const wireMat=new THREE.MeshBasicMaterial({color,wireframe:true,transparent:true,opacity:.1});
+  const wireMat=new THREE.MeshBasicMaterial({color,wireframe:true,transparent:true,opacity:isHub?0.15:0.1});
   const wire=new THREE.Mesh(new THREE.SphereGeometry(base*1.08,10,10),wireMat);
   group.add(wire);
 
-  // Edges 轮廓
+  // Edges
   const edges=new THREE.EdgesGeometry(new THREE.SphereGeometry(base*1.15,12,12));
-  group.add(new THREE.LineSegments(edges,new THREE.LineBasicMaterial({color,transparent:true,opacity:.22})));
+  group.add(new THREE.LineSegments(edges,new THREE.LineBasicMaterial({color,transparent:true,opacity:isHub?0.3:0.22})));
 
   // 外层大线框
   const outerEdges=new THREE.EdgesGeometry(new THREE.SphereGeometry(base*1.5,6,6));
-  group.add(new THREE.LineSegments(outerEdges,new THREE.LineBasicMaterial({color:0x44ccff,transparent:true,opacity:.04})));
+  group.add(new THREE.LineSegments(outerEdges,new THREE.LineBasicMaterial({color:isHub?0xffaa33:0x44ccff,transparent:true,opacity:isHub?0.08:0.04})));
 
-  // 环1
-  const r1=base*1.6;const p1=[];for(let a=0;a<=64;a++){const ang=a/64*Math.PI*2;p1.push(new THREE.Vector3(Math.cos(ang)*r1,Math.sin(ang)*r1,0))}
-  const ring=new THREE.Line(new THREE.BufferGeometry().setFromPoints(p1),new THREE.LineBasicMaterial({color:0x44ddff,transparent:true,opacity:.07}));group.add(ring);
-
-  // 环2
-  const r2=base*1.3;const p2=[];for(let a=0;a<=64;a++){const ang=a/64*Math.PI*2;p2.push(new THREE.Vector3(Math.cos(ang)*r2,0,Math.sin(ang)*r2))}
-  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(p2),new THREE.LineBasicMaterial({color:0x0088ff,transparent:true,opacity:.03})));
+  // 光环
+  for (let ri = 0; ri < ringCount; ri++) {
+    const r = base * (1.6 + ri * 0.5);
+    const p = [];
+    for (let a = 0; a <= 64; a++) {
+      const ang = a / 64 * Math.PI * 2;
+      if (ri % 2 === 0) p.push(new THREE.Vector3(Math.cos(ang) * r, Math.sin(ang) * r, 0));
+      else p.push(new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r));
+    }
+    group.add(new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(p),
+      new THREE.LineBasicMaterial({color: isHub ? 0xffaa33 : 0x44ddff, transparent: true, opacity: isHub ? 0.12 : 0.07})
+    ));
+  }
 
   // 轨道粒子
   const oc=8+Math.floor(Math.random()*8);const op=[];
-  for(let i=0;i<oc;i++){const a=i/oc*Math.PI*2;const rd=r1*.85;op.push(Math.cos(a)*rd,Math.sin(a)*rd,0)}
+  for(let i=0;i<oc;i++){const a=i/oc*Math.PI*2;const rd=base*1.6*.85;op.push(Math.cos(a)*rd,Math.sin(a)*rd,0)}
   const ob=new THREE.BufferGeometry();ob.setAttribute('position',new THREE.Float32BufferAttribute(op,3));
-  const orb=new THREE.Points(ob,new THREE.PointsMaterial({color:0x66eeff,size:.02,transparent:true,opacity:.5,blending:THREE.AdditiveBlending}));group.add(orb);
+  const orb=new THREE.Points(ob,new THREE.PointsMaterial({color:isHub?0xffcc66:0x66eeff,size:isHub?0.03:0.02,transparent:true,opacity:.5,blending:THREE.AdditiveBlending}));group.add(orb);
 
-  return{group,wire,ring,orb,phase:Math.random()*Math.PI*2,baseSize:base};
+  return{group,wire,ring:group.children[group.children.length-2],orb,phase:Math.random()*Math.PI*2,baseSize:base,isHub};
 }
 
 function updateLabelPositions(){
@@ -1374,36 +1393,66 @@ function rebuild(){
 
   _positions=computePositions(items);
 
+  // 按分类分组，确定每个分类的 hub
+  const catGroups={};
+  items.forEach(item=>{const cat=item.category||'未分类';if(!catGroups[cat])catGroups[cat]=[];catGroups[cat].push(item)});
+  const hubIds=new Set();
+  Object.entries(catGroups).forEach(([cat,group])=>{
+    if(group.length<2){hubIds.add(group[0].id);return}
+    const scored=group.map(item=>({item,score:hubScore(item,group)}));
+    scored.sort((a,b)=>b.score-a.score);
+    hubIds.add(scored[0].item.id);
+  });
+
+  // 渲染节点（hub 用金色大球，普通子节点用小蓝球）
   data.nodes.forEach((node,i)=>{
     const item=items.find(x=>x.id===node.id);
     const pos=_positions[node.id]||{x:(Math.random()-.5)*3,y:(Math.random()-.5)*2,z:(Math.random()-.5)*3};
-    const h=createHoloSphere(pos,node,i,data.nodes.length);
+    const isHub=hubIds.has(node.id);
+    const catName=item?.category||'未分类';
+    const galaxyName=getGalaxyName(catName)||catName;
+    const h=createHoloSphere(pos,node,i,data.nodes.length,isHub,catName);
     nodeGroup.add(h.group);
-    allMeshes.push({group:h.group,nodeId:node.id,data:h});
+    allMeshes.push({group:h.group,nodeId:node.id,data:h,isHub,category:catName});
 
-    // 标题标签
-    const lc=document.createElement('canvas');lc.width=512;lc.height=256;
+    // 标签：hub 显示星系名（金色），子节点显示标题（白色）
+    const lc=document.createElement('canvas');
     const lctx=lc.getContext('2d');
     lctx.textAlign='center';lctx.textBaseline='middle';
-    lctx.font='bold 56px "Microsoft YaHei","Noto Sans SC",sans-serif';
-    lctx.shadowColor='rgba(0,0,0,1)';lctx.shadowBlur=32;
-    lctx.fillStyle='#ffffff';
-    const labelText=(node.title||'').slice(0,6);
-    lctx.fillText(labelText,256,128);
-    const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
-    const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
-    ls.position.set(0,0,0);
-    ls.scale.set(h.baseSize*2.2,h.baseSize*1.1,1);
-    h.group.add(ls);
+
+    if(isHub){
+      lc.width=512;lc.height=256;
+      lctx.font='bold 52px "Microsoft YaHei","Noto Sans SC",sans-serif';
+      lctx.shadowColor='rgba(255,180,50,.6)';lctx.shadowBlur=20;
+      lctx.fillStyle='#ffcc66';
+      const labelText=galaxyName.length>5?galaxyName.slice(0,5)+'…':galaxyName;
+      lctx.fillText(labelText,256,128);
+      const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
+      const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
+      ls.position.set(0,h.baseSize*.9,0);
+      ls.scale.set(h.baseSize*2.6,h.baseSize*1.3,1);
+      h.group.add(ls);
+    } else {
+      lc.width=512;lc.height=128;
+      lctx.font='bold 48px "Microsoft YaHei","Noto Sans SC",sans-serif';
+      lctx.shadowColor='rgba(0,0,0,.8)';lctx.shadowBlur=16;
+      lctx.fillStyle='#ffffff';
+      const labelText=(node.title||'').slice(0,6);
+      lctx.fillText(labelText,256,64);
+      const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
+      const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false,blending:THREE.AdditiveBlending}));
+      ls.position.set(0,-h.baseSize*.7,0);
+      ls.scale.set(h.baseSize*2.5,h.baseSize*.8,1);
+      h.group.add(ls);
+    }
   });
 
-  // 连线（圆柱体粗线 + 辉光线）
+  // 连线
   if(data.links.length){
     linkGroup=new THREE.Group();scene.add(linkGroup);
     const glowPos=[];const glowColors=[];
     const uiHex=getTheme('ui_color','#00ccff');
     const r=parseInt(uiHex.slice(1,3),16)/255,g=parseInt(uiHex.slice(3,5),16)/255,b=parseInt(uiHex.slice(5,7),16)/255;
-    const linkColor=new THREE.Color(uiHex);
 
     data.links.forEach(link=>{
       const s=allMeshes.find(m=>m.nodeId===link.source);
@@ -1411,10 +1460,13 @@ function rebuild(){
       if(!s||!t)return;
       const p1=s.group.position,p2=t.group.position;
       const thickness=.003+(link.strength||.2)*.008;
+      const isHubLink = s.isHub || t.isHub;
+      const linkColor = isHubLink ? new THREE.Color('#ffaa44') : new THREE.Color(uiHex);
       const linkGroupObj=createThickLink(p1,p2,linkColor,Math.min(thickness,.015));
       if(linkGroupObj){linkGroupObj.userData.linkInfo={source:link.source,target:link.target};linkGroup.add(linkGroupObj)}
       glowPos.push(p1.x,p1.y,p1.z,p2.x,p2.y,p2.z);
-      glowColors.push(r,g,b,r*.35,g*.35,b*.35);
+      const cr=isHubLink?0.8:r,cg=isHubLink?0.55:g,cb=isHubLink?0.1:b;
+      glowColors.push(cr,cg,cb,cr*.35,cg*.35,cb*.35);
     });
 
     if(glowPos.length){
