@@ -1347,6 +1347,13 @@ function updateLabelPositions(){
     const div=document.createElement('div');
     div.className='slabel node-label'+(nl.isHub?' hub-label':'');
     div.textContent=nl.text;
+    // 内联样式绕过浏览器缓存
+    div.style.cssText='position:absolute;transform:translate(-50%,-50%);'+
+      'font-family:Noto Sans SC,Microsoft YaHei,sans-serif;font-weight:900;text-align:center;'+
+      'background:#000;border-radius:8px;white-space:pre-line;transition:none;'+
+      (nl.isHub
+        ? 'color:#0f0;border:3px solid #ff0;padding:8px 22px;'
+        : 'color:#ff0;border:2px solid #f00;padding:6px 16px;');
     el.appendChild(div);
     nl.div=div;
   });
