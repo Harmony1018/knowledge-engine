@@ -1340,7 +1340,7 @@ function updateLabelPositions(){
   cats.forEach(cat=>{
     const div=document.createElement('div');div.className='slabel cat-label';
     const gname=getGalaxyName(cat.name);
-    div.textContent='\u25C6 '+(gname||cat.name);
+    div.textContent=gname||cat.name;
     el.appendChild(div);cat.div=div;
   });
   window._catLabels=cats;
@@ -1467,14 +1467,14 @@ function rebuild(){
     // 标签数据收集（由 CSS overlay 渲染，保证文字完美居中）
     let labelText;
     if(isHub){
-      labelText=catName.length>5?catName.slice(0,5)+'…':catName;
+      labelText=galaxyName.length>5?galaxyName.slice(0,5)+'…':galaxyName;
     } else {
       const t=(node.title||'').slice(0,18);
       const chunks=[];
       for(let ci=0;ci<t.length;ci+=6)chunks.push(t.slice(ci,ci+6));
       labelText=chunks.join('\n');
     }
-    _nodeLabels.push({pos:new THREE.Vector3(pos.x,pos.y,pos.z), text:labelText, isHub, category:catName, nodeId:node.id});
+    _nodeLabels.push({pos:new THREE.Vector3(pos.x,pos.y,pos.z), text:labelText, isHub, category:catName, nodeId:node.id, baseSize:h.baseSize});
     allMeshes.push({group:h.group, nodeId:node.id, data:h, isHub, category:catName});
 
     });
@@ -1585,6 +1585,7 @@ function animate(){
     controls.target.lerp(_focusTarget,.035);
   }
 
+  controls.update();
   // 更新分类与节点标签屏幕位置
   const w2=innerWidth/2,h2=innerHeight/2;
   if(window._catLabels){
@@ -1593,7 +1594,7 @@ function animate(){
       const v=new THREE.Vector3(cat.x,cat.y,cat.z);
       v.project(camera);
       const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
-      if(v.z<1){cat.div.style.left=x+'px';cat.div.style.top=y+'px';cat.div.style.opacity=Math.max(.05,Math.min(1,1-Math.abs(v.z)*1.5))}
+      if(v.z<1){cat.div.style.transform='translate3d('+x+'px,'+y+'px,0) translate(-50%,-50%)';cat.div.style.opacity=Math.max(.05,Math.min(1,1-Math.abs(v.z)*1.5))}
       else{cat.div.style.opacity='0'}
     });
   }
@@ -1605,16 +1606,16 @@ function animate(){
       const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
       if(v.z<1){
         const dist=camera.position.distanceTo(new THREE.Vector3(nl.pos.x,nl.pos.y,nl.pos.z));
-        const baseScale=nl.isHub?380:200;
-        const fs=Math.max(nl.isHub?14:10,Math.min(nl.isHub?80:48,baseScale/dist));
-        nl.div.style.left=x+'px';nl.div.style.top=y+'px';
+        const baseScale=nl.isHub?420:160;
+        const fs=Math.max(nl.isHub?14:9,Math.min(nl.isHub?80:28,baseScale/dist));
+        nl.div.style.transform='translate3d('+x+'px,'+y+'px,0) translate(-50%,-50%)';
         nl.div.style.fontSize=fs+'px';
+        nl.div.style.maxWidth=Math.max(36,(nl.baseSize*2.4)/dist*h2)+'px';
         nl.div.style.opacity=Math.max(.3,Math.min(1,4/dist)).toString();nl.div.style.display='';
       }else{nl.div.style.display='none'}
     });
   }
 
-  controls.update();
   renderer.render(scene,camera);
 }
 
