@@ -437,6 +437,7 @@ body {
 <script>setTimeout(function(){var l=document.getElementById('loading');if(l)l.classList.add('hidden')},5000);</script>
 <div id="scene-container"></div>
 <div id="scene-labels"></div>
+<div id="colorTest" style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:red;background:#000;border:3px solid red;padding:15px 25px;font-size:36px;font-weight:bold;z-index:999;pointer-events:none;">TEST RED LABEL</div>
 <div id="aiIndicator"><div class="spin"></div><p>AI 分析中...</p></div>
 
 <div id="emptyHint" class="hidden">
@@ -1348,12 +1349,18 @@ function updateLabelPositions(){
     div.className='slabel node-label'+(nl.isHub?' hub-label':'');
     div.textContent=nl.text;
     // 内联样式绕过浏览器缓存
-    div.style.cssText='position:absolute;transform:translate(-50%,-50%);'+
-      'font-family:Noto Sans SC,Microsoft YaHei,sans-serif;font-weight:900;text-align:center;'+
-      'background:#000;border-radius:8px;white-space:pre-line;transition:none;'+
-      (nl.isHub
-        ? 'color:#0f0;border:3px solid #ff0;padding:8px 22px;'
-        : 'color:#ff0;border:2px solid #f00;padding:6px 16px;');
+    div.style.position='absolute';
+    div.style.transform='translate(-50%,-50%)';
+    div.style.color=nl.isHub?'#0f0':'#ff0';
+    div.style.background='#000';
+    div.style.border=nl.isHub?'3px solid #ff0':'2px solid #f00';
+    div.style.borderRadius='8px';
+    div.style.padding=nl.isHub?'8px 22px':'6px 16px';
+    div.style.fontFamily='Noto Sans SC,Microsoft YaHei,sans-serif';
+    div.style.fontWeight='900';
+    div.style.textAlign='center';
+    div.style.whiteSpace='pre-line';
+    div.style.lineHeight='1.3';
     el.appendChild(div);
     nl.div=div;
   });
