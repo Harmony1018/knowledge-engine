@@ -271,6 +271,12 @@ body {
 .kc .kp { font-size:12px; color:rgba(255,255,255,.45); }
 .kc .kd { float:right; }
 .kc .kcat { display:inline-block; font-size:10px; padding:2px 8px; border-radius:3px; background:var(--accent-dim); color:var(--accent-text); margin-left:8px; letter-spacing:1px; }
+.kh {
+  font-family:'Orbitron',monospace; font-size:11px; letter-spacing:2px;
+  color:var(--accent-text-bright); padding:8px 0 2px 0; margin-top:4px;
+  border-bottom:1px solid rgba(255,255,255,.04);
+}
+.kh:first-child { margin-top:0; }
 .empty { text-align:center; padding:40px 20px; color:rgba(255,255,255,.4); }
 .empty .ei { font-size:34px; margin-bottom:8px; opacity:.2; }
 .empty p { font-size:13px; }
@@ -892,6 +898,7 @@ function delItem(id){
   items.forEach(i=>{i.relatedIds=i.relatedIds.filter(rid=>rid!==id)});
   save(items);
   rebuild();upStats();rendL();
+  populateGalaxySelector();
   generateGalaxyNames(load());
 }
 
@@ -993,7 +1000,19 @@ function closeP(n){document.getElementById('p-'+n).classList.remove('open')}
 function rendL(){
   const items=load(),el=document.getElementById('listC');
   if(!items.length){el.innerHTML='<div class="empty"><div class="ei">◈</div><p>空。点击 ＋ 添加第一条知识。</p></div>';return}
-  el.innerHTML='<div class="kl">'+items.map(i=>`<div class="kc" onclick="showD(${i.id})"><button class="kd btn-d" onclick="event.stopPropagation();delItem(${i.id})">✕</button><h3>${i.title}<span class="kcat">${i.category||'未分类'}</span></h3><div class="kp">${(i.content||'').slice(0,50)}${(i.content||'').length>50?'…':''}</div></div>`).join('')+'</div>';
+  // 按分类分组
+  const groups={};
+  items.forEach(i=>{const cat=i.category||'未分类';if(!groups[cat])groups[cat]=[];groups[cat].push(i)});
+  const sortedCats=Object.keys(groups).sort();
+  let html='<div class="kl">';
+  sortedCats.forEach(cat=>{
+    html+='<div class="kh">◈ '+cat+'</div>';
+    groups[cat].forEach(i=>{
+      html+='<div class="kc" onclick="showD('+i.id+')"><button class="kd btn-d" onclick="event.stopPropagation();delItem('+i.id+')">✕</button><h3>'+i.title+'</h3><div class="kp">'+(i.content||'').slice(0,40)+((i.content||'').length>40?'…':'')+'</div></div>';
+    });
+  });
+  html+='</div>';
+  el.innerHTML=html;
 }
 
 // ===== 详情面板 =====
@@ -1387,16 +1406,16 @@ function getCategoryCenters(){
 
 let _positions={};
 
-// ===== 星系选择器 =====
+// ===== 分类选择器 =====
 function populateGalaxySelector(){
   const sel=document.getElementById('galaxySelector');
   if(!sel)return;
-  const galaxies=loadGalaxies();
+  // 从实际知识条目中提取分类，不用缓存的星系数据
+  const items=load().map(migrate);
+  const cats=[...new Set(items.map(i=>i.category||'未分类'))].sort();
   sel.innerHTML='<option value="__all__">⟐ 全部分类</option>';
-  Object.keys(galaxies).forEach(cat=>{
-    const g=galaxies[cat];
-    const name=cat;
-    const opt=document.createElement('option');opt.value=cat;opt.textContent=name;
+  cats.forEach(cat=>{
+    const opt=document.createElement('option');opt.value=cat;opt.textContent=cat;
     sel.appendChild(opt);
   });
 }
