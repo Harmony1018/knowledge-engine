@@ -391,18 +391,16 @@ body {
 }
 .node-label {
   font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;
-  font-size:24px; letter-spacing:1px; color:#fff;
+  letter-spacing:1px; color:#fff;
   transform:translate(-50%,-50%);
-  background:rgba(0,0,0,.75);
-  padding:3px 14px; border-radius:6px;
+  background:rgba(0,0,0,.75); border-radius:6px;
   white-space:pre-line; text-align:center; line-height:1.35;
   font-weight:700;
 }
 .hub-label {
-  font-size:38px; font-weight:900;
+  font-weight:900;
   color:#ffe099;
-  background:rgba(0,0,0,.8);
-  padding:5px 18px; border-radius:8px;
+  background:rgba(0,0,0,.8); border-radius:8px;
 }
 
 /* ===== AI 分析指示器 ===== */
@@ -1582,8 +1580,15 @@ function animate(){
       const v=new THREE.Vector3(nl.pos.x,nl.pos.y,nl.pos.z);
       v.project(camera);
       const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
-      if(v.z<1){nl.div.style.left=x+'px';nl.div.style.top=y+'px';nl.div.style.opacity="1"}
-      else{nl.div.style.display="none"}
+      if(v.z<1){
+        const dist=camera.position.distanceTo(new THREE.Vector3(nl.pos.x,nl.pos.y,nl.pos.z));
+        const baseScale=nl.isHub?220:130;
+        const fs=Math.max(nl.isHub?14:10,Math.min(nl.isHub?80:48,baseScale/dist));
+        nl.div.style.left=x+'px';nl.div.style.top=y+'px';
+        nl.div.style.fontSize=fs+'px';
+        nl.div.style.padding=(nl.isHub?'6px 18px':'3px 14px');
+        nl.div.style.opacity='1';nl.div.style.display='';
+      }else{nl.div.style.display='none'}
     });
   }
 
