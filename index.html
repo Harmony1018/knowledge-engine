@@ -809,22 +809,205 @@ async function addItem(){
   generateGalaxyNames(load());
 }
 
-// ===== 一键导入链接 =====
+// ===== 一键导入链接（纯前端，无需后端）=====
+const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+
+function extractMetaContent(html, prop) {
+  const re = new RegExp(`<meta[^>]+(?:name|property)=["']${prop}["'][^>]+content=["']([^"']+)["']`, 'i');
+  const m = html.match(re);
+  if (m) return m[1];
+  const re2 = new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:name|property)=["']${prop}["']`, 'i');
+  const m2 = html.match(re2);
+  if (m2) return m2[1];
+  return null;
+}
+
+function htmlToText(html) {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+    .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+    .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;|&amp;|&lt;|&gt;|&quot;/g, ' ')
+    .replace(/\s+/g, ' ').trim();
+}
+
+// ===== 抖音链接识别 =====
+function isDouyinUrl(url) {
+  return /(douyin\.com|iesdouyin\.com)/i.test(url);
+}
+
+function parseDouyinHtml(html, url) {
+  // 从 <title> 提取视频标题（去掉抖音后缀）
+  let title = '';
+  const tm = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+  if (tm) {
+    title = tm[1].trim()
+      .replace(/[#＃]\s*/g, '')
+      .replace(/\s*[-–—|]\s*抖音.*$/i, '')
+      .replace(/\s*[-–—|]\s*Douyin.*$/i, '')
+      .replace(/^[@]?抖音\s*[-–—|]*\s*/i, '')
+      .trim();
+  }
+
+  // 尝试从 meta 标签提取描述和作者
+  let desc = extractMetaContent(html, 'description') || extractMetaContent(html, 'og:description') || '';
+  let author = extractMetaContent(html, 'author') || '';
+
+  // 从 URL 提取视频 ID
+  let videoId = '';
+  const vm = url.match(/(?:video|note|modal_id)[=/](\d+)/i);
+  if (vm) videoId = vm[1];
+
+  // 尝试解析页面内嵌的渲染数据
+  let extraInfo = '';
+  const renderData = html.match(/<script[^>]*id="RENDER_DATA"[^>]*>([\s\S]*?)<\/script>/i);
+  if (renderData) {
+    try {
+      const decoded = decodeURIComponent(renderData[1]);
+      const jsonMatch = decoded.match(/\{[^}]*"aweme"\s*:\s*\{[^}]*"desc"\s*:\s*"([^"]*)"/);
+      if (jsonMatch) {
+        if (!desc) desc = jsonMatch[1];
+      }
+    } catch(e) {}
+  }
+
+  // 尝试从 window._ROUTER_DATA 提取
+  const routerData = html.match(/window\._ROUTER_DATA\s*=\s*(\{[\s\S]*?\});/i);
+  if (routerData) {
+    try {
+      const data = JSON.parse(routerData[1]);
+      const loc = (data.loaderData || data)['video_(id)'] || '';
+    } catch(e) {}
+  }
+
+  // 构建格式化的内容
+  let content = '';
+  if (title) content += '📹 视频标题：' + title + '\n';
+  if (author) content += '👤 作者：' + author + '\n';
+  if (videoId) content += '🆔 视频ID：' + videoId + '\n';
+  if (desc) content += '📝 描述：' + desc + '\n';
+  content += '\n🔗 来源：' + url;
+
+  return { title: title || '抖音视频', content: content || url, desc, author, videoId };
+}
+
 async function importUrl(){
   const url=document.getElementById('ipt-import-url').value.trim();
   if(!url)return;
   const st=document.getElementById('importUrlStatus');
-  st.textContent='⏳ 正在获取链接内容...';
-  try{
-    const res=await fetch('/api/import-url',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url})});
-    if(!res.ok)throw new Error('后端不可用');
-    const d=await res.json();
-    document.getElementById('ipt-title').value=d.title||'';
-    document.getElementById('ipt-content').value=d.content||'';
-    document.getElementById('ipt-tags').value=(d.tags||[]).join(', ');
-    st.textContent='✅ 内容已提取，请确认后点「存入知识宇宙」';
-  }catch(e){
-    st.textContent='❌ 需要启动后端服务：在终端运行 node server.js';
+  const isDouyin = isDouyinUrl(url);
+  st.textContent = isDouyin ? '⏳ 检测到抖音链接，正在提取视频信息...' : '⏳ 正在获取链接内容...';
+
+  // 尝试直接 fetch（部分站点支持 CORS）
+  async function tryFetch(u) {
+    try {
+      const r = await fetch(u, { mode: 'cors', signal: AbortSignal.timeout(8000) });
+      if (r.ok) return await r.text();
+    } catch(e) {}
+    return null;
+  }
+
+  try {
+    // 先试直接 fetch，失败则走 CORS 代理
+    let html = await tryFetch(url);
+    if (!html) {
+      st.textContent = isDouyin ? '⏳ 通过代理获取抖音页面...' : '⏳ 通过代理获取...';
+      const pr = await fetch(CORS_PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(15000) });
+      if (!pr.ok) throw new Error('代理获取失败');
+      html = await pr.text();
+    }
+    if (!html || html.length < 50) throw new Error('内容过短');
+
+    // 抖音链接走专用解析器
+    if (isDouyin) {
+      const dy = parseDouyinHtml(html, url);
+      document.getElementById('ipt-title').value = dy.title || '';
+      document.getElementById('ipt-content').value = dy.content || '';
+      document.getElementById('ipt-tags').value = '抖音, 短视频';
+      st.textContent = '✅ 抖音视频信息已提取，请确认后点「存入知识宇宙」';
+
+      // 如果配置了 DeepSeek Key，用 AI 进一步结构化
+      const apiKey = loadAK();
+      if (apiKey && dy.title && dy.desc) {
+        st.textContent = '⏳ AI 结构化抖音内容中...';
+        try {
+          const ai = await fetch('https://api.deepseek.com/chat/completions', {
+            method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+            body:JSON.stringify({
+              model:'deepseek-chat',
+              messages:[{role:'system',content:'你是一个内容整理助手。分析抖音视频信息返回JSON，不要多余文字。'},{role:'user',content:`标题：${dy.title}\n描述：${dy.desc}\n作者：${dy.author}\n链接：${url}\n\n返回JSON：\n{"title":"优化后的标题","category":"2-4字分类（如：搞笑娱乐、知识科普、美食教程、科技数码）","tags":["标签1","标签2"],"summary":"一句话概括视频内容"}`}],
+              temperature:.3, max_tokens:500
+            })
+          });
+          if (ai.ok) {
+            const d = await ai.json();
+            try { const r = JSON.parse(d.choices[0].message.content);
+              if (r.title) document.getElementById('ipt-title').value = r.title;
+              if (r.tags && r.tags.length) document.getElementById('ipt-tags').value = r.tags.join(', ');
+              if (r.summary) {
+                document.getElementById('ipt-content').value = '📹 ' + dy.title + '\n👤 作者：' + (dy.author || '未知') + '\n📝 AI摘要：' + r.summary + '\n\n🔗 ' + url;
+              }
+            } catch(e) {}
+          }
+        } catch(e) {}
+      }
+      return;
+    }
+
+    // ===== 以下为非抖音链接的通用解析逻辑 =====
+    // 解析标题
+    let title = extractMetaContent(html, 'og:title') || extractMetaContent(html, 'twitter:title') || '';
+    if (!title) {
+      const tm = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+      if (tm) title = tm[1].trim();
+    }
+    // 解析描述
+    let desc = extractMetaContent(html, 'description') || extractMetaContent(html, 'og:description') || '';
+    // 提取正文
+    const body = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    const text = htmlToText(body ? body[1] : html).slice(0, 5000);
+
+    let result = { title: title || url, content: desc ? desc + '\n\n' + text : text, tags: [] };
+
+    // 如果配置了 DeepSeek Key，用 AI 结构化
+    const apiKey = loadAK();
+    if (apiKey && title) {
+      st.textContent='⏳ AI 结构化中...';
+      try {
+        const ai = await fetch('https://api.deepseek.com/chat/completions', {
+          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+          body:JSON.stringify({
+            model:'deepseek-chat',
+            messages:[{role:'system',content:'你是一个网页内容整理助手。分析内容返回JSON，不要多余文字。'},{role:'user',content:`标题：${title}\n内容：${text.slice(0,2000)}\n\n返回JSON：\n{"title":"优化后的标题","category":"2-4字分类","tags":["标签1","标签2"],"summary":"一句话摘要"}`}],
+            temperature:.3, max_tokens:500
+          })
+        });
+        if (ai.ok) {
+          const d = await ai.json();
+          try { const r = JSON.parse(d.choices[0].message.content);
+            result.title = r.title || title;
+            result.category = r.category || '';
+            result.tags = r.tags || [];
+            result.summary = r.summary || '';
+          } catch(e) {}
+        }
+      } catch(e) {}
+    }
+
+    document.getElementById('ipt-title').value = result.title || '';
+    document.getElementById('ipt-content').value = result.content || '';
+    if (result.tags && result.tags.length) document.getElementById('ipt-tags').value = result.tags.join(', ');
+    st.textContent = '✅ 内容已提取，请确认后点「存入知识宇宙」';
+  } catch(e) {
+    if (isDouyin) {
+      st.textContent = '⚠️ 抖音页面需要浏览器渲染，请手动复制视频标题和文案粘贴到上方表单，或截图后通过图片上传。';
+    } else {
+      st.textContent = '❌ 无法获取该链接（浏览器跨域限制），可手动粘贴内容或尝试配置 DeepSeek API Key 后重试';
+    }
   }
 }
 
