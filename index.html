@@ -1220,9 +1220,7 @@ let allMeshes=[];let linkLines=null;let linkGroup=null;let linkGlowLines=null;le
 const clock=new THREE.Clock();
 
 // 相机聚焦状态
-let _focusTarget=null;
 let _isFocused=false;
-let _savedAutoRotate=true;
 
 // 计算聚类位置
 function computePositions(items){
@@ -1420,7 +1418,7 @@ function populateGalaxySelector(){
   });
 }
 
-// ===== 相机聚焦 =====
+// ===== 相机聚焦（一次性过渡，不限制后续旋转） =====
 function focusOnGalaxy(categoryName){
   const items=load().map(migrate);
   const catItems=items.filter(i=>(i.category||'未分类')===categoryName);
@@ -1428,10 +1426,11 @@ function focusOnGalaxy(categoryName){
   let cx=0,cy=0,cz=0,count=0;
   catItems.forEach(item=>{const p=_positions[item.id];if(p){cx+=p.x;cy+=p.y;cz+=p.z;count++}});
   if(!count)return;
-  const t={x:cx/count,y:cy/count,z:cz/count};
-  _focusTarget=new THREE.Vector3(t.x,t.y,t.z);
-  _savedAutoRotate=controls.autoRotate;
-  controls.autoRotate=false;
+  const tx=cx/count,ty=cy/count,tz=cz/count;
+  // 一次性设置相机目标和位置，之后用户可自由旋转
+  controls.target.set(tx,ty,tz);
+  camera.position.set(tx+tx*.3,ty+1.5,tz+tz*.3+4);
+  controls.update();
   _isFocused=true;
   document.getElementById('btnResetGalaxy').classList.add('show');
   const sel=document.getElementById('galaxySelector');
@@ -1439,8 +1438,11 @@ function focusOnGalaxy(categoryName){
 }
 
 function resetCamera(){
-  _focusTarget=null;_isFocused=false;
-  controls.autoRotate=_savedAutoRotate;
+  _isFocused=false;
+  // 回到全局视角
+  controls.target.set(0,0,0);
+  camera.position.set(0,0,8);
+  controls.update();
   document.getElementById('btnResetGalaxy').classList.remove('show');
   const sel=document.getElementById('galaxySelector');
   if(sel)sel.value='__all__';
@@ -1592,16 +1594,6 @@ function animate(){
   // 辉光线闪烁
   if(linkGlowLines)linkGlowLines.material.opacity=.06+Math.sin(t*1.8)*.05;
 
-  // 相机聚焦缓动
-  if(_isFocused&&_focusTarget){
-    const posTarget=new THREE.Vector3(
-      _focusTarget.x+_focusTarget.x*.3,
-      _focusTarget.y+1.5,
-      _focusTarget.z+_focusTarget.z*.3+4
-    );
-    camera.position.lerp(posTarget,.035);
-    controls.target.lerp(_focusTarget,.035);
-  }
 
   controls.update();
 
