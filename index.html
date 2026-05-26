@@ -387,6 +387,20 @@ body {
   font-size:11px; letter-spacing:2px; color:rgba(255,255,255,.4);
   transform:translate(-50%,-50%); transition:opacity .8s;
   text-shadow:0 0 20px var(--accent-border);
+  pointer-events:none; white-space:nowrap;
+}
+.node-label {
+  font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;
+  font-size:13px; letter-spacing:0; color:rgba(255,255,255,.9);
+  transform:translate(-50%,-50%); transition:opacity .6s;
+  text-shadow:0 0 8px rgba(0,0,0,.9),0 0 3px rgba(0,0,0,.7);
+  white-space:pre-line; text-align:center; line-height:1.3;
+  font-weight:500;
+}
+.hub-label {
+  font-size:17px; font-weight:700;
+  color:#ffcc66;
+  text-shadow:0 0 14px rgba(0,0,0,.95),0 0 6px rgba(255,200,80,.5),0 0 2px rgba(0,0,0,.8);
 }
 
 /* ===== AI 分析指示器 ===== */
@@ -1310,16 +1324,28 @@ function createHoloSphere(pos, item, index, total, isHub, categoryName){
 }
 
 function updateLabelPositions(){
-  const cats=getCategoryCenters();
   const el=document.getElementById('scene-labels');
   el.innerHTML='';
+
+  // 分类标签
+  const cats=getCategoryCenters();
   cats.forEach(cat=>{
-    const div=document.createElement('div');div.className='slabel';
+    const div=document.createElement('div');div.className='slabel cat-label';
     const gname=getGalaxyName(cat.name);
-    div.textContent='◆ '+(gname||cat.name);
+    div.textContent='\u25C6 '+(gname||cat.name);
     el.appendChild(div);cat.div=div;
   });
   window._catLabels=cats;
+
+  // 节点标签（hub 金色大字，leaf 白色小字多行）
+  if(!window._nodeLabels)window._nodeLabels=[];
+  window._nodeLabels.forEach(nl=>{
+    const div=document.createElement('div');
+    div.className='slabel node-label'+(nl.isHub?' hub-label':'');
+    div.textContent=nl.text;
+    el.appendChild(div);
+    nl.div=div;
+  });
 }
 
 function getCategoryCenters(){
@@ -1405,6 +1431,7 @@ function rebuild(){
   });
 
   // 渲染节点（hub 用金色大球，普通子节点用小蓝球）
+  _nodeLabels=[];
   data.nodes.forEach((node,i)=>{
     const item=items.find(x=>x.id===node.id);
     const pos=_positions[node.id]||{x:(Math.random()-.5)*3,y:(Math.random()-.5)*2,z:(Math.random()-.5)*3};
@@ -1413,58 +1440,24 @@ function rebuild(){
     const galaxyName=getGalaxyName(catName)||catName;
     const h=createHoloSphere(pos,node,i,data.nodes.length,isHub,catName);
     nodeGroup.add(h.group);
-    allMeshes.push({group:h.group,nodeId:node.id,data:h,isHub,category:catName});
 
-    // 标签：hub 显示分类名（金色），子节点显示标题（白色，支持多行）
-    const lc=document.createElement('canvas');
-    const lctx=lc.getContext('2d');
-    lctx.textAlign='center';lctx.textBaseline='middle';
-
+    // 标签数据收集（由 CSS overlay 渲染，保证文字完美居中）
+    let labelText;
     if(isHub){
-      lc.width=512;lc.height=512;
-      lctx.fillStyle='#ffcc66';
-      lctx.font='bold 80px "Microsoft YaHei","Noto Sans SC",sans-serif';
-      lctx.shadowColor='rgba(0,0,0,.8)';lctx.shadowBlur=12;
-      lctx.strokeStyle='rgba(0,0,0,.6)';lctx.lineWidth=5;
-      const labelText=catName.length>5?catName.slice(0,5)+'…':catName;
-      lctx.strokeText(labelText,256,256);
-      lctx.fillText(labelText,256,256);
-      const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
-      const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false}));
-      ls.position.set(0,0,0);
-      const s=h.baseSize*1.8;
-      ls.scale.set(s,s,1);
-      h.group.add(ls);
+      labelText=catName.length>5?catName.slice(0,5)+'…':catName;
     } else {
-      const fullTitle=(node.title||"").slice(0,18);
-      const lines=[];
-      for(let li=0;li<fullTitle.length;li+=6){
-        lines.push(fullTitle.slice(li,li+6));
-        if(lines.length>=3)break;
-      }
-      lc.width=512;lc.height=512;
-      lctx.fillStyle='#ffffff';
-      lctx.font='bold 60px "Microsoft YaHei","Noto Sans SC",sans-serif';
-      lctx.shadowColor='rgba(0,0,0,.9)';lctx.shadowBlur=14;
-      lctx.strokeStyle='rgba(0,0,0,.7)';lctx.lineWidth=4;
-      const lineH=72;
-      const totalH=(lines.length-1)*lineH;
-      lines.forEach((ln,i)=>{
-        const y=256-totalH/2+i*lineH;
-        lctx.strokeText(ln,256,y);
-        lctx.fillText(ln,256,y);
-      });
-      const lt=new THREE.CanvasTexture(lc);lt.needsUpdate=true;
-      const ls=new THREE.Sprite(new THREE.SpriteMaterial({map:lt,transparent:true,depthWrite:false,depthTest:false}));
-      ls.position.set(0,0,0);
-      const s=h.baseSize*1.4;
-      ls.scale.set(s,s,1);
-      h.group.add(ls);
+      const t=(node.title||'').slice(0,18);
+      const chunks=[];
+      for(let ci=0;ci<t.length;ci+=6)chunks.push(t.slice(ci,ci+6));
+      labelText=chunks.join('\n');
     }
-  });
+    _nodeLabels.push({pos:pos.clone(), text:labelText, isHub, category:catName, nodeId:node.id});
+    allMeshes.push({group:h.group, nodeId:node.id, data:h, isHub, category:catName});
 
-  // 连线
-  if(data.links.length){
+    });
+
+    // 连线
+    if(data.links.length){
     linkGroup=new THREE.Group();scene.add(linkGroup);
     const glowPos=[];const glowColors=[];
     const uiHex=getTheme('ui_color','#00ccff');
@@ -1569,9 +1562,9 @@ function animate(){
     controls.target.lerp(_focusTarget,.035);
   }
 
-  // 更新分类标签屏幕位置
+  // 更新分类与节点标签屏幕位置
+  const w2=innerWidth/2,h2=innerHeight/2;
   if(window._catLabels){
-    const w2=innerWidth/2,h2=innerHeight/2;
     window._catLabels.forEach(cat=>{
       if(!cat.div)return;
       const v=new THREE.Vector3(cat.x,cat.y,cat.z);
@@ -1579,6 +1572,16 @@ function animate(){
       const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
       if(v.z<1){cat.div.style.left=x+'px';cat.div.style.top=y+'px';cat.div.style.opacity=Math.max(.05,Math.min(1,1-Math.abs(v.z)*1.5))}
       else{cat.div.style.opacity='0'}
+    });
+  }
+  if(window._nodeLabels){
+    window._nodeLabels.forEach(nl=>{
+      if(!nl.div)return;
+      const v=nl.pos.clone();
+      v.project(camera);
+      const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
+      if(v.z<1){nl.div.style.left=x+'px';nl.div.style.top=y+'px';nl.div.style.opacity=Math.max(.1,Math.min(1,1-Math.abs(v.z)*1.2))}
+      else{nl.div.style.opacity='0'}
     });
   }
 
