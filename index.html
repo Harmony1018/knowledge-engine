@@ -901,9 +901,40 @@ async function importUrl(){
   if(!url)return;
   const st=document.getElementById('importUrlStatus');
   const isDouyin = isDouyinUrl(url);
-  st.textContent = isDouyin ? '⏳ 检测到抖音链接，正在提取视频信息...' : '⏳ 正在获取链接内容...';
+  const apiKey = loadAK();
 
-  // 尝试直接 fetch（部分站点支持 CORS）
+  // ===== 抖音链接：跳过页面抓取，直接让 AI 处理 =====
+  if (isDouyin) {
+    if (!apiKey) {
+      st.textContent = '⚠️ 抖音链接需要配置 DeepSeek API Key 才能导入，请在设置中填入 Key';
+      return;
+    }
+    st.textContent = '⏳ AI 正在分析抖音链接...';
+    try {
+      const ai = await fetch('https://api.deepseek.com/chat/completions', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+        body:JSON.stringify({
+          model:'deepseek-chat',
+          messages:[{role:'system',content:'你是一个内容整理AI，只返回有效JSON，不要多余文字。'},{role:'user',content:`这是一条抖音视频链接：${url}\n\n请根据链接格式推断：\n1. 如果是 /video/xxx 或 /note/xxx 格式，说明是视频或图文笔记\n2. 如果是 v.douyin.com 短链接，说明是分享链接\n3. 生成一个合理的临时标题和内容描述\n\n严格返回JSON：\n{"title":"临时标题","content":"链接指向的抖音内容（待人工补充详细描述）","category":"短视频收藏","tags":["抖音","短视频"],"summary":"抖音视频链接收藏"}`}],
+          temperature:.3, max_tokens:500
+        })
+      });
+      if (!ai.ok) throw new Error('AI 请求失败');
+      const d = await ai.json();
+      const r = JSON.parse(d.choices[0].message.content);
+      document.getElementById('ipt-title').value = r.title || '抖音视频';
+      document.getElementById('ipt-content').value = (r.content || '') + '\n\n🔗 ' + url;
+      document.getElementById('ipt-tags').value = (r.tags || ['抖音']).join(', ');
+      st.textContent = '✅ 已生成导入模板，请补充详细内容后点「存入知识宇宙」';
+    } catch(e) {
+      st.textContent = '⚠️ AI 请求失败（' + e.message + '），请检查 API Key 是否正确';
+    }
+    return;
+  }
+
+  // ===== 以下为非抖音链接的通用逻辑 =====
+  st.textContent = '⏳ 正在获取链接内容...';
+
   async function tryFetch(u) {
     try {
       const r = await fetch(u, { mode: 'cors', signal: AbortSignal.timeout(8000) });
@@ -913,17 +944,15 @@ async function importUrl(){
   }
 
   try {
-    // 先试直接 fetch，失败则走 CORS 代理
     let html = await tryFetch(url);
     if (!html) {
-      st.textContent = isDouyin ? '⏳ 通过代理获取抖音页面...' : '⏳ 通过代理获取...';
-      // 尝试两个 CORS 代理
+      st.textContent = '⏳ 通过代理获取...';
       let pr;
       try {
         pr = await fetch(CORS_PROXY + encodeURIComponent(url), { signal: AbortSignal.timeout(15000) });
         if (!pr.ok) throw new Error('代理1失败');
       } catch(e) {
-        st.textContent = isDouyin ? '⏳ 切换备用代理...' : '⏳ 切换备用代理...';
+        st.textContent = '⏳ 切换备用代理...';
         pr = await fetch(CORS_PROXY2 + encodeURIComponent(url), { signal: AbortSignal.timeout(15000) });
         if (!pr.ok) throw new Error('代理获取失败');
       }
@@ -931,61 +960,6 @@ async function importUrl(){
     }
     if (!html || html.length < 50) throw new Error('内容过短');
 
-    // 抖音链接走专用解析器
-    if (isDouyin) {
-      const dy = parseDouyinHtml(html, url);
-      const apiKey = loadAK();
-
-      // 有 API Key：直接让 DeepSeek 分析链接（AI 能根据 URL 和标题推断内容）
-      if (apiKey) {
-        st.textContent = '⏳ AI 正在分析抖音链接...';
-        try {
-          const aiPrompt = `根据以下抖音视频信息，推断并整理成结构化知识。
-
-视频链接：${url}
-页面标题：${dy.title || '未知'}
-${dy.author ? '作者：' + dy.author : ''}
-${dy.desc ? '页面描述：' + dy.desc : ''}
-
-请根据链接和标题推断视频主题，严格返回 JSON（不要多余文字）：
-{
-  "title": "优化后的标题",
-  "content": "用100-200字描述这个视频可能的内容主题",
-  "category": "2-4字分类（搞笑娱乐、知识科普、美食教程、科技数码、旅行生活、音乐舞蹈、运动健身、情感语录、新闻资讯）",
-  "tags": ["标签1","标签2","标签3"],
-  "summary": "一句话概括"
-}`;
-          const ai = await fetch('https://api.deepseek.com/chat/completions', {
-            method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
-            body:JSON.stringify({
-              model:'deepseek-chat',
-              messages:[{role:'system',content:'你是一个知识整理AI，能根据视频链接和标题推断内容，只返回有效JSON。'},{role:'user',content:aiPrompt}],
-              temperature:.3, max_tokens:800
-            })
-          });
-          if (ai.ok) {
-            const d = await ai.json();
-            try {
-              const r = JSON.parse(d.choices[0].message.content);
-              document.getElementById('ipt-title').value = r.title || dy.title || '';
-              document.getElementById('ipt-content').value = (r.content || '') + '\n\n🔗 ' + url;
-              document.getElementById('ipt-tags').value = (r.tags || ['抖音']).join(', ');
-              st.textContent = '✅ AI 已分析完成，请确认后点「存入知识宇宙」';
-              return;
-            } catch(e) {}
-          }
-        } catch(e) {}
-      }
-
-      // 无 API Key 或 AI 失败：用页面解析结果兜底
-      document.getElementById('ipt-title').value = dy.title || '';
-      document.getElementById('ipt-content').value = dy.content || '';
-      document.getElementById('ipt-tags').value = '抖音, 短视频';
-      st.textContent = dy.title ? '✅ 已从页面提取信息，建议配置 API Key 获得更好的导入效果' : '⚠️ 未能提取到足够信息，建议配置 DeepSeek API Key 或在设置中填入 Key 后重试';
-      return;
-    }
-
-    // ===== 以下为非抖音链接的通用解析逻辑 =====
     // 解析标题
     let title = extractMetaContent(html, 'og:title') || extractMetaContent(html, 'twitter:title') || '';
     if (!title) {
@@ -1001,12 +975,12 @@ ${dy.desc ? '页面描述：' + dy.desc : ''}
     let result = { title: title || url, content: desc ? desc + '\n\n' + text : text, tags: [] };
 
     // 如果配置了 DeepSeek Key，用 AI 结构化
-    const apiKey = loadAK();
-    if (apiKey && title) {
+    const apiKey2 = loadAK();
+    if (apiKey2 && title) {
       st.textContent='⏳ AI 结构化中...';
       try {
         const ai = await fetch('https://api.deepseek.com/chat/completions', {
-          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
+          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey2},
           body:JSON.stringify({
             model:'deepseek-chat',
             messages:[{role:'system',content:'你是一个网页内容整理助手。分析内容返回JSON，不要多余文字。'},{role:'user',content:`标题：${title}\n内容：${text.slice(0,2000)}\n\n返回JSON：\n{"title":"优化后的标题","category":"2-4字分类","tags":["标签1","标签2"],"summary":"一句话摘要"}`}],
@@ -1030,11 +1004,7 @@ ${dy.desc ? '页面描述：' + dy.desc : ''}
     if (result.tags && result.tags.length) document.getElementById('ipt-tags').value = result.tags.join(', ');
     st.textContent = '✅ 内容已提取，请确认后点「存入知识宇宙」';
   } catch(e) {
-    if (isDouyin) {
-      st.textContent = '⚠️ 获取失败，请检查网络或确认在设置中已配置 DeepSeek API Key，然后重试。';
-    } else {
-      st.textContent = '❌ 无法获取该链接（浏览器跨域限制），可手动粘贴内容或尝试配置 DeepSeek API Key 后重试';
-    }
+    st.textContent = '❌ 无法获取该链接（浏览器跨域限制），可手动粘贴内容或尝试配置 DeepSeek API Key 后重试';
   }
 }
 
