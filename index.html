@@ -467,7 +467,7 @@ body {
   </div>
   <div class="hud-stats"><div id="hudNodes">NODES: 0</div><div id="hudLinks">LINKS: 0</div></div>
 </div>
-<div id="hud-bottom">⟐ 左键旋转 · Shift+左键平移 · 滚轮缩放 · 触屏双指平移 ⟐</div>
+<div id="hud-bottom">⟐ 左键旋转 · 右键平移 · 滚轮缩放 · 触屏双指平移 ⟐</div>
 
 <div id="toolbar">
   <button onclick="openP('add')">＋<span class="thint">ADD</span></button>
@@ -1166,12 +1166,8 @@ controls.autoRotate=true;controls.autoRotateSpeed=.4;
 controls.minDistance=2;controls.maxDistance=25;
 controls.screenSpacePanning=true;
 controls.panSpeed=1.5;
-controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.PAN};
-// Shift+左键 = 平移（避免与浏览器右键菜单冲突）
-let _shiftDown=false;
+controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.PAN,RIGHT:THREE.MOUSE.PAN};
 renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
-document.addEventListener('keydown',e=>{if(e.key==='Shift'){_shiftDown=true;controls.mouseButtons.LEFT=THREE.MOUSE.PAN}});
-document.addEventListener('keyup',e=>{if(e.key==='Shift'){_shiftDown=false;controls.mouseButtons.LEFT=THREE.MOUSE.ROTATE}});
 // 移动端触摸手势：一指旋转、双指平移/缩放（OrbitControls 内置）
 
 const amb=new THREE.AmbientLight(0x224466);scene.add(amb);
