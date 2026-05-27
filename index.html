@@ -969,7 +969,9 @@ async function addItem(){
   upStats();
   generateGalaxyNames(load());
   checkMergeCategories(load(), loadAK());
-} =====
+}
+
+// ===== AI 批量导入 =====
 async function bulkImport(){
   const text=document.getElementById('ipt-bulk').value.trim();
   if(text.length<20){alert('请粘贴至少 20 个字符的内容');return}
