@@ -465,6 +465,23 @@ body {
 .ctx-danger { color:rgba(255,80,80,.6); }
 .ctx-danger:hover { background:rgba(255,60,60,.1); color:rgba(255,80,80,.8); }
 
+/* ===== 暗色下拉 ===== */
+.dark-select {
+  width:100%;padding:10px 12px;
+  background:rgba(255,255,255,.04) !important;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:6px;color:#fff;font-size:13px;
+  outline:none;font-family:inherit;cursor:pointer;
+  -webkit-appearance:none;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M0 0l6 8 6-8z' fill='rgba(255,255,255,.3)'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 12px center;
+  padding-right:32px;
+}
+.dark-select:focus { border-color:var(--accent-border-focus); }
+.dark-select option {
+  background:#111;color:#fff;
+}
+
 /* ===== 响应式 ===== */
 @media(max-width:640px){
   .panel{width:100vw;right:-100vw}
@@ -517,7 +534,7 @@ body {
   <div class="ph"><h2>／ADD NODE</h2><button class="pc" onclick="closeP('add')">✕</button></div>
   <div id="prefillHint" style="display:none;padding:8px 14px;margin-bottom:14px;background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:4px;font-size:12px;color:var(--accent-text-bright)"></div>
   <div class="fg"><label>添加到星系（可选）</label>
-    <select id="ipt-category" style="width:100%;padding:10px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;color:#fff;font-size:13px;outline:none;font-family:inherit;cursor:pointer">
+    <select id="ipt-category" class="dark-select">
       <option value="">⟐ AI 自动判断</option>
     </select>
   </div>
