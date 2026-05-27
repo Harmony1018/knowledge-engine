@@ -108,6 +108,22 @@ body {
 #galaxySelector:focus {
   border-color:var(--accent-border-focus);
 }
+#btnEditGalaxy {
+  background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:3px;
+  color:rgba(255,255,255,.5);
+  font-size:10px;
+  width:22px;height:22px;
+  cursor:pointer;
+  display:flex;
+  align-items:center;justify-content:center;
+  transition:.3s;
+}
+#btnEditGalaxy:hover {
+  background:rgba(255,255,255,.1);
+  color:rgba(255,255,255,.8);
+}
 #btnResetGalaxy {
   background:rgba(255,255,255,.05);
   border:1px solid rgba(255,255,255,.08);
@@ -431,6 +447,24 @@ body {
 @keyframes aspin { to{transform:rotate(360deg)} }
 #aiIndicator p { font-size:12px; color:rgba(255,255,255,.35); font-family:'Orbitron',monospace; letter-spacing:2px; }
 
+/* ===== 右键菜单 ===== */
+.ctx-menu {
+  position:fixed; z-index:60; display:none;
+  min-width:160px; background:rgba(0,0,0,.94);
+  backdrop-filter:blur(20px); border:1px solid rgba(255,255,255,.1);
+  border-radius:8px; padding:6px 0; overflow:hidden;
+}
+.ctx-menu.show { display:block; }
+.ctx-item {
+  padding:10px 18px; font-size:13px; color:rgba(255,255,255,.75);
+  cursor:pointer; transition:all .2s; font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;
+  white-space:nowrap;
+}
+.ctx-item:hover { background:rgba(255,255,255,.06); color:#fff; }
+.ctx-sep { height:1px; background:rgba(255,255,255,.06); margin:4px 0; }
+.ctx-danger { color:rgba(255,80,80,.6); }
+.ctx-danger:hover { background:rgba(255,60,60,.1); color:rgba(255,80,80,.8); }
+
 /* ===== 响应式 ===== */
 @media(max-width:640px){
   .panel{width:100vw;right:-100vw}
@@ -464,12 +498,13 @@ body {
       <select id="galaxySelector">
         <option value="__all__">⟐ 全域</option>
       </select>
+      <button id="btnEditGalaxy" onclick="editGalaxyName()" title="编辑星系名称">✎</button>
       <button id="btnResetGalaxy" onclick="resetCamera()">✕</button>
     </div>
   </div>
   <div class="hud-stats"><div id="hudNodes">NODES: 0</div><div id="hudLinks">LINKS: 0</div></div>
 </div>
-<div id="hud-bottom">⟐ 左键旋转 · 右键平移 · 滚轮缩放 · 触屏双指平移 ⟐</div>
+<div id="hud-bottom">⟐ 左键查看 · 右键菜单 · 中键平移 · 滚轮缩放 ⟐</div>
 
 <div id="toolbar">
   <button onclick="openP('add')">＋<span class="thint">ADD</span></button>
@@ -516,14 +551,34 @@ body {
 </div>
 
 <div class="panel" id="p-detail">
-  <div class="ph"><h2>／DETAIL</h2><button class="pc" onclick="closeP('detail')">✕</button></div>
-  <div id="detailCategory" class="dt-cat"></div>
-  <div id="detailTitle" class="dt-title"></div>
-  <div id="detailSummary" class="dt-sum"></div>
-  <div id="detailImage" class="dt-img"></div>
-  <div id="detailContent" class="dt-content"></div>
-  <div id="detailTags" class="dt-tags"></div>
-  <div id="detailRelated" class="dt-related"></div>
+  <div class="ph"><h2>／DETAIL</h2>
+    <div style="display:flex;gap:8px">
+      <button id="btnEditDetail" class="pc" onclick="editDetail()" style="width:auto;padding:0 12px;font-size:11px;font-family:'Courier New',monospace">EDIT</button>
+      <button class="pc" onclick="closeP('detail')">✕</button>
+    </div>
+  </div>
+  <!-- 查看模式 -->
+  <div id="detailView">
+    <div id="detailCategory" class="dt-cat"></div>
+    <div id="detailTitle" class="dt-title"></div>
+    <div id="detailSummary" class="dt-sum"></div>
+    <div id="detailImage" class="dt-img"></div>
+    <div id="detailContent" class="dt-content"></div>
+    <div id="detailTags" class="dt-tags"></div>
+    <div id="detailRelated" class="dt-related"></div>
+  </div>
+  <!-- 编辑模式 -->
+  <div id="detailEdit" style="display:none">
+    <div class="fg"><label>分类</label><input id="editCat" placeholder="分类名称"></div>
+    <div class="fg"><label>标题</label><input id="editTitle" placeholder="知识标题"></div>
+    <div class="fg"><label>摘要</label><input id="editSummary" placeholder="一句话摘要"></div>
+    <div class="fg"><label>内容</label><textarea id="editContent" placeholder="知识内容…" style="min-height:200px"></textarea></div>
+    <div class="fg"><label>标签（逗号分隔）</label><input id="editTags" placeholder="标签1, 标签2"></div>
+    <div style="display:flex;gap:10px">
+      <button class="btn-p" onclick="saveDetail()" style="flex:1">保存修改</button>
+      <button class="btn-d" onclick="cancelEdit()">取消</button>
+    </div>
+  </div>
 </div>
 
 <div class="panel" id="p-settings">
@@ -537,6 +592,12 @@ body {
 </div>
 
 <div class="mb" id="modalBg" onclick="closeM()"></div>
+<div id="ctxMenu" class="ctx-menu">
+  <div class="ctx-item" onclick="ctxEdit()">✎ 编辑知识</div>
+  <div class="ctx-item" onclick="ctxAddChild()">＋ 添加子知识</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item ctx-danger" onclick="ctxDelete()">✕ 删除节点</div>
+</div>
 <div class="modal" id="modal"><button class="mc2" onclick="closeM()">✕</button><h2 id="modalT"></h2><div class="mc" id="modalC"><div class="msum" id="modalSum"></div><div id="modalImg"></div><div id="modalContent"></div></div></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -719,7 +780,15 @@ async function aiEnhance(item, allItems) {
   const apiKey = loadAK();
   if (!apiKey) return false;
 
-  // 只取同分类或相似度最高的 10 条作为上下文（避免 token 溢出）
+  // 收集用户已有分类及其节点数量，作为 AI 优先参考
+  const catStats = {};
+  allItems.forEach(i => { const c = i.category || '未分类'; catStats[c] = (catStats[c] || 0) + 1; });
+  const existingCats = Object.entries(catStats)
+    .filter(([c]) => c !== '未分类')
+    .sort((a, b) => b[1] - a[1])
+    .map(([c, n]) => `「${c}」(${n}条)`).join('、');
+
+  // 取相似度最高的 10 条作为上下文
   const fp = getFP(item);
   const scored = allItems
     .filter(i => i.id !== item.id)
@@ -729,6 +798,10 @@ async function aiEnhance(item, allItems) {
   const existing = context.length
     ? context.map(({item: i, score: s}) => `"${i.title}"（分类:${i.category||'未分类'},相似度:${(s*100)|0}%）`).join('\n')
     : '（空知识库）';
+
+  const catsHint = existingCats
+    ? `【你的知识库已有分类（优先使用！）】${existingCats}\n【通用分类（仅在已有分类都不匹配时使用）】人工智能｜编程技术｜数据科学｜设计美学｜英语学习｜历史人文｜商业财经｜心理学｜医学健康｜物理天文｜数学逻辑｜哲学思辨｜法律政治｜音乐艺术｜影视文学｜游戏动漫｜美食烹饪｜旅行地理｜运动健身｜生活技巧｜情感人际｜教育学习｜其他`
+    : '【可用分类】人工智能｜编程技术｜数据科学｜设计美学｜英语学习｜历史人文｜商业财经｜心理学｜医学健康｜物理天文｜数学逻辑｜哲学思辨｜法律政治｜音乐艺术｜影视文学｜游戏动漫｜美食烹饪｜旅行地理｜运动健身｜生活技巧｜情感人际｜教育学习｜其他';
 
   const prompt = `你是知识组织专家。分析以下内容，生成结构化元数据。
 
@@ -741,7 +814,7 @@ ${existing}
 
 请推导并返回 JSON（勿加解释）：
 {
-  "category": "最合适的 2-5 字分类。常见分类参考：人工智能｜编程技术｜数据科学｜设计美学｜英语学习｜历史人文｜商业财经｜心理学｜医学健康｜物理天文｜数学逻辑｜哲学思辨｜法律政治｜音乐艺术｜影视文学｜游戏动漫｜美食烹饪｜旅行地理｜运动健身｜生活技巧｜情感人际｜教育学习｜其他",
+  "category": "2-5字分类。优先从已有分类中选择！如果新知与某个已有分类语义相近（如同一领域的不同子话题），必须归入该已有分类。如果内容主题相近但侧重不同，仍应归入同一分类。只有完全不同领域才创建新分类。参考：${catsHint}",
   "tags": ["精确标签1","标签2","标签3","标签4","标签5"],
   "summary": "15-30 字精准摘要，保留关键名词",
   "polishedTitle": "提炼后的标题（去除冗余，保留核心信息）",
@@ -755,7 +828,7 @@ ${existing}
       body:JSON.stringify({
         model:'deepseek-chat',
         messages:[
-          {role:'system',content:'你是知识管理专家。能精准识别文本领域、提取关键概念、判断知识关联。只返回有效 JSON。'},
+          {role:'system',content:'你是知识管理专家。能精准识别文本领域、提取关键概念、判断知识关联。重要原则：优先将新内容归入用户已有的知识分类，避免创建碎片化分类。只返回有效 JSON。'},
           {role:'user',content:prompt}
         ],
         temperature:.25, max_tokens:800
@@ -770,7 +843,6 @@ ${existing}
     item.summary = result.summary || '';
     item.tags = result.tags || item.tags || [];
     item.relatedIds = Array.isArray(result.relatedIds) ? result.relatedIds : [];
-    // AI 优化标题
     if (result.polishedTitle && result.polishedTitle.length <= 50) {
       item.title = result.polishedTitle;
     }
@@ -779,6 +851,45 @@ ${existing}
     console.log('AI enhance failed:', e);
     return false;
   }
+}
+
+// ===== 分类合并检查（入库后自动检测相似分类） =====
+async function checkMergeCategories(items, apiKey) {
+  if (!apiKey || items.length < 2) return;
+  const cats = [...new Set(items.map(i => i.category || '未分类').filter(c => c !== '未分类'))];
+  if (cats.length < 2) return;
+
+  // 用 AI 检测是否有相似分类应合并
+  const catList = cats.join('、');
+  try {
+    const res = await fetch('https://api.deepseek.com/chat/completions', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
+      body:JSON.stringify({
+        model:'deepseek-chat',
+        messages:[
+          {role:'system',content:'你是知识分类专家。判断知识库分类是否需要合并。只返回 JSON，不做解释。'},
+          {role:'user',content:`知识库有以下分类：${catList}\n\n检测是否有语义相近、应合并的分类对。例如"选品策略"和"电商运营"都应归入"电子商务"。\n\n返回 JSON：\n{"merges":[{"from":"被合并的分类","to":"合并到的目标分类"}]}\n\n如无需合并返回{"merges":[]}`}
+        ],
+        temperature:.2, max_tokens:400
+      })
+    });
+    if (!res.ok) return;
+    const d = await res.json();
+    const result = tryParseAIJson(d.choices[0].message.content);
+    if (!result || !result.merges || !result.merges.length) return;
+
+    for (const m of result.merges) {
+      if (!m.from || !m.to) continue;
+      if (!cats.includes(m.from) || !cats.includes(m.to)) continue;
+      // 合并：把 from 分类的所有条目改为 to
+      items.forEach(i => { if ((i.category || '未分类') === m.from) i.category = m.to; });
+      // 删除 from 星系
+      const g = loadGalaxies(); delete g[m.from]; saveGalaxies(g);
+    }
+    save(items);
+    console.log('分类合并:', result.merges);
+  } catch(e) { console.log('Merge check failed:', e); }
 }
 
 // ===== AI 星系命名 =====
@@ -857,9 +968,8 @@ async function addItem(){
   rebuild();
   upStats();
   generateGalaxyNames(load());
-}
-
-// ===== AI 批量导入 =====
+  checkMergeCategories(load(), loadAK());
+} =====
 async function bulkImport(){
   const text=document.getElementById('ipt-bulk').value.trim();
   if(text.length<20){alert('请粘贴至少 20 个字符的内容');return}
@@ -890,6 +1000,7 @@ async function bulkImport(){
     st.textContent='✅ 成功导入 '+added+' 条知识！';
     document.getElementById('ipt-bulk').value='';
     rebuild();upStats();generateGalaxyNames(load());
+    checkMergeCategories(load(), loadAK());
   }catch(e){st.textContent='❌ 错误: '+e.message}
   finally{document.getElementById('aiIndicator').classList.remove('show')}
 }
@@ -903,6 +1014,62 @@ function delItem(id){
   populateGalaxySelector();
   generateGalaxyNames(load());
 }
+
+// ===== 右键菜单操作 =====
+function ctxEdit(){
+  const id = window._ctxNodeId;
+  hideCtxMenu();
+  if (id) showD(id);
+}
+function ctxAddChild(){
+  const id = window._ctxNodeId;
+  hideCtxMenu();
+  if (!id) return;
+  const item = load().find(x => x.id === id);
+  if (!item) return;
+  // 打开添加面板，预填分类
+  openP('add');
+  if (item.category && item.category !== '未分类') {
+    // 提示用户分类已预填（在标题旁做个视觉提示）
+    document.getElementById('ipt-title').placeholder = '添加「' + (item.category) + '」星系的新知识…';
+    document.getElementById('ipt-title').dataset.prefillCat = item.category;
+  }
+}
+function ctxDelete(){
+  const id = window._ctxNodeId;
+  hideCtxMenu();
+  if (!id) return;
+  const item = load().find(x => x.id === id);
+  if (!item) return;
+  if (confirm('删除「' + item.title + '」？\n该操作不可撤销。')) {
+    delItem(id);
+  }
+}
+function hideCtxMenu(){
+  document.getElementById('ctxMenu').classList.remove('show');
+  window._ctxNodeId = null;
+}
+
+// 添加面板提交时自动使用预填分类
+const _origAddItem = addItem;
+addItem = async function(){
+  const cat = document.getElementById('ipt-title').dataset.prefillCat;
+  if (cat) {
+    // 暂存标题，让 AI 增强前已知分类意图
+    delete document.getElementById('ipt-title').dataset.prefillCat;
+  }
+  await _origAddItem();
+  // 如果 AI 没有给出分类但有预填分类，手动设置
+  if (cat) {
+    const items = load();
+    const last = items[items.length - 1];
+    if (last && (!last.category || last.category === '未分类')) {
+      last.category = cat;
+      save(items);
+      rebuild(); upStats(); rendL(); populateGalaxySelector();
+    }
+  }
+};
 
 function clearAll(){
   save([]);
@@ -1021,8 +1188,13 @@ function rendL(){
 function showD(id){
   const item=load().find(x=>x.id===id);
   if(!item)return;
+  _editingItemId = id;
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('open'));
   document.getElementById('p-detail').classList.add('open');
+  // 重置为查看模式
+  document.getElementById('detailView').style.display='block';
+  document.getElementById('detailEdit').style.display='none';
+  document.getElementById('btnEditDetail').style.display='';
 
   document.getElementById('detailCategory').textContent='◆ '+(item.category||'未分类');
 
@@ -1051,6 +1223,84 @@ function showD(id){
     relEl.innerHTML='<h4>关联节点</h4>'+related.map(r=>'<div class="dt-related-item" onclick="showD('+r.id+')">'+r.title+'<span style="float:right;font-size:10px;color:rgba(255,255,255,.2)">'+(r.category||'未分类')+'</span></div>').join('');
     relEl.style.display='block';
   } else relEl.style.display='none';
+}
+
+// ===== 编辑知识 =====
+let _editingItemId = null;
+
+function editDetail(){
+  const item = load().find(x => x.id === _editingItemId);
+  if (!item) return;
+  document.getElementById('detailView').style.display = 'none';
+  document.getElementById('detailEdit').style.display = 'block';
+  document.getElementById('btnEditDetail').style.display = 'none';
+  document.getElementById('editCat').value = item.category || '';
+  document.getElementById('editTitle').value = item.title || '';
+  document.getElementById('editSummary').value = item.summary || '';
+  document.getElementById('editContent').value = item.content || '';
+  document.getElementById('editTags').value = (item.tags || []).join(', ');
+}
+
+function cancelEdit(){
+  document.getElementById('detailView').style.display = 'block';
+  document.getElementById('detailEdit').style.display = 'none';
+  document.getElementById('btnEditDetail').style.display = '';
+}
+
+function saveDetail(){
+  const items = load();
+  const item = items.find(x => x.id === _editingItemId);
+  if (!item) return;
+  const newCat = document.getElementById('editCat').value.trim() || '未分类';
+  const oldCat = item.category;
+  item.category = newCat;
+  item.title = document.getElementById('editTitle').value.trim() || item.title;
+  item.summary = document.getElementById('editSummary').value.trim();
+  item.content = document.getElementById('editContent').value.trim();
+  item.tags = document.getElementById('editTags').value.split(/[,，]/).map(s => s.trim()).filter(Boolean);
+  item.fingerprint = extFP(item.title + ' ' + item.content);
+  save(items);
+
+  // 如果分类变了，更新星系
+  if (oldCat !== newCat) {
+    generateGalaxyNames(items);
+    checkMergeCategories(items, loadAK());
+  }
+
+  cancelEdit();
+  showD(item.id);
+  rebuild();
+  upStats();
+  rendL();
+}
+
+// ===== 编辑星系名称 =====
+function editGalaxyName(){
+  const sel = document.getElementById('galaxySelector');
+  const cat = sel.value;
+  if (!cat || cat === '__all__') {
+    // 列出所有星系让用户选择
+    const cats = [...new Set(load().map(i => i.category || '未分类'))];
+    if (!cats.length) return;
+    const catNames = cats.map(c => {
+      const g = _galaxiesCache[c];
+      return c + (g && g.name ? ' (' + g.name + ')' : '');
+    }).join('\n');
+    const chosen = prompt('输入要改名的星系（分类名）：\n\n已有星系：\n' + catNames);
+    if (!chosen) return;
+    const newName = prompt('为「' + chosen + '」输入新名称（2-6字科幻风）：', (_galaxiesCache[chosen] && _galaxiesCache[chosen].name) || '');
+    if (!newName) return;
+    setGalaxyName(chosen, newName);
+    populateGalaxySelector();
+    updateLabelPositions();
+    return;
+  }
+  const curName = getGalaxyName(cat) || cat;
+  const newName = prompt('为「' + cat + '」输入新名称（2-6字科幻风）：', curName);
+  if (!newName || newName === curName) return;
+  setGalaxyName(cat, newName);
+  populateGalaxySelector();
+  updateLabelPositions();
 }
 
 function closeM(){document.getElementById('modal').classList.remove('o');document.getElementById('modalBg').classList.remove('o')}
@@ -1409,12 +1659,12 @@ let _positions={};
 function populateGalaxySelector(){
   const sel=document.getElementById('galaxySelector');
   if(!sel)return;
-  // 从实际知识条目中提取分类，不用缓存的星系数据
   const items=load().map(migrate);
   const cats=[...new Set(items.map(i=>i.category||'未分类'))].sort();
   sel.innerHTML='<option value="__all__">⟐ 全部分类</option>';
   cats.forEach(cat=>{
-    const opt=document.createElement('option');opt.value=cat;opt.textContent=cat;
+    const gName = getGalaxyName(cat);
+    const opt=document.createElement('option');opt.value=cat;opt.textContent=gName?gName+' ('+cat+')':cat;
     sel.appendChild(opt);
   });
 }
@@ -1538,9 +1788,9 @@ function rebuild(){
   updateLabelPositions();
   populateGalaxySelector();
 
-  // 点击检测
+  // 点击检测（共用 raycasting）
   const rc=new THREE.Raycaster(),ms=new THREE.Vector2();
-  renderer.domElement.onclick=(ev)=>{
+  function _hitNode(ev){
     const rect=renderer.domElement.getBoundingClientRect();
     ms.x=((ev.clientX-rect.left)/rect.width)*2-1;
     ms.y=-((ev.clientY-rect.top)/rect.height)*2+1;
@@ -1552,9 +1802,37 @@ function rebuild(){
     const hits=rc.intersectObjects(targets.map(t=>t.mesh));
     if(hits.length){
       const found=targets.find(t=>t.mesh===hits[0].object);
-      if(found)showD(found.data.nodeId);
+      return found?found.data:null;
     }
+    return null;
+  }
+
+  renderer.domElement.onclick=(ev)=>{
+    if (ev.button !== 0) return; // 只响应左键
+    const m = _hitNode(ev);
+    if (m) showD(m.nodeId);
   };
+
+  // 右键菜单
+  window._ctxNodeId = null;
+  function hideCtx(){ document.getElementById('ctxMenu').classList.remove('show'); window._ctxNodeId = null; }
+  renderer.domElement.addEventListener('contextmenu', ev => {
+    ev.preventDefault();
+    const m = _hitNode(ev);
+    if (!m) { hideCtx(); return; }
+    window._ctxNodeId = m.nodeId;
+    const menu = document.getElementById('ctxMenu');
+    menu.style.left = ev.clientX + 'px';
+    menu.style.top = ev.clientY + 'px';
+    // 防止溢出屏幕
+    const mw = menu.offsetWidth || 160, mh = menu.offsetHeight || 130;
+    if (ev.clientX + mw > innerWidth) menu.style.left = (ev.clientX - mw) + 'px';
+    if (ev.clientY + mh > innerHeight) menu.style.top = (ev.clientY - mh) + 'px';
+    menu.classList.add('show');
+  });
+  document.addEventListener('click', ev => {
+    if (!document.getElementById('ctxMenu').contains(ev.target)) hideCtx();
+  });
 }
 
 // ===== 动画循环 =====
