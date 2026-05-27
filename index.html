@@ -515,8 +515,8 @@ body {
 
 <div class="panel" id="p-add">
   <div class="ph"><h2>／ADD NODE</h2><button class="pc" onclick="closeP('add')">✕</button></div>
-  <div class="fg"><label>TITLE</label><input id="ipt-title" placeholder="给这段知识命名"></div>
-  <div class="fg"><label>CONTENT</label><textarea id="ipt-content" placeholder="写下知识内容…"></textarea></div>
+  <div id="prefillHint" style="display:none;padding:8px 14px;margin-bottom:14px;background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:4px;font-size:12px;color:var(--accent-text-bright)"></div>
+  <div class="fg"><label>CONTENT</label><textarea id="ipt-content" placeholder="写下知识内容，AI 自动生成标题、分类、摘要…"></textarea></div>
   <div class="fg"><label>IMAGE（选填）</label>
     <div class="img-upload-wrap" onclick="document.getElementById('imgInput').click()">
       <span>＋ 选择图片</span>
@@ -690,7 +690,7 @@ function getTheme(key,def){try{var t=loadTheme();return t&&t[key]!==undefined?t[
 function setTheme(key,val){try{var t=loadTheme();if(t){t[key]=val;saveTheme(t)}}catch{}}
 
 function getGalaxyName(cat){var g=_galaxiesCache;return g[cat]&&g[cat].name?g[cat].name:null}
-function setGalaxyName(cat,name){var g=_galaxiesCache;g[cat]=g[cat]||{};g[cat].name=name;saveGalaxies(g)}
+function setGalaxyName(cat,name){var g=_galaxiesCache;g[cat]=g[cat]||{};g[cat].name=name;g[cat].aiGenerated=false;saveGalaxies(g)}
 
 function hexToHue(hex){
   if(!hex||hex.length<7)return 190;
@@ -937,21 +937,22 @@ async function generateGalaxyNames(items){
 
 // ===== 添加知识 =====
 async function addItem(){
-  const t=document.getElementById('ipt-title').value.trim(),c=document.getElementById('ipt-content').value.trim();
-  if(!t||!c){alert('请填写标题和内容');return}
+  const c=document.getElementById('ipt-content').value.trim();
+  if(!c){alert('请填写内容');return}
+  // 从内容首行/首句生成临时标题，AI 随后会替换
+  const fallbackTitle = (c.split(/[\n。！？,，]/)[0]||c).slice(0,30) || '未命名';
   const items=load();
   const newItem={
-    id:Date.now(),title:t,content:c,
-    category:'未分类',summary:'',relatedIds:[],
+    id:Date.now(),title:fallbackTitle,content:c,
+    category:window._prefillCat||'未分类',summary:'',relatedIds:[],
     image:currentImageDataURL||null,
     tags:document.getElementById('ipt-tags').value.split(/[,，]/).map(s=>s.trim()).filter(Boolean),
-    fingerprint:extFP(t+' '+c),
+    fingerprint:extFP(fallbackTitle+' '+c),
     createdAt:new Date().toISOString()
   };
   items.push(newItem);
   save(items);
 
-  document.getElementById('ipt-title').value='';
   document.getElementById('ipt-content').value='';
   document.getElementById('ipt-tags').value='';
   removeImage();
@@ -963,6 +964,13 @@ async function addItem(){
     const all = load();
     const idx = all.findIndex(x => x.id === newItem.id);
     if (idx !== -1) { all[idx] = newItem; save(all); }
+  }
+  // 预填分类优先于 AI 分类
+  if (window._prefillCat && newItem.category !== window._prefillCat) {
+    newItem.category = window._prefillCat;
+    const all2 = load();
+    const idx2 = all2.findIndex(x => x.id === newItem.id);
+    if (idx2 !== -1) { all2[idx2] = newItem; save(all2); }
   }
   document.getElementById('aiIndicator').classList.remove('show');
   rebuild();
@@ -1029,12 +1037,12 @@ function ctxAddChild(){
   if (!id) return;
   const item = load().find(x => x.id === id);
   if (!item) return;
-  // 打开添加面板，预填分类
   openP('add');
   if (item.category && item.category !== '未分类') {
-    // 提示用户分类已预填（在标题旁做个视觉提示）
-    document.getElementById('ipt-title').placeholder = '添加「' + (item.category) + '」星系的新知识…';
-    document.getElementById('ipt-title').dataset.prefillCat = item.category;
+    window._prefillCat = item.category;
+    const hint = document.getElementById('prefillHint');
+    hint.textContent = '⟐ 将添加至「' + item.category + '」星系';
+    hint.style.display = 'block';
   }
 }
 function ctxDelete(){
@@ -1052,26 +1060,6 @@ function hideCtxMenu(){
   window._ctxNodeId = null;
 }
 
-// 添加面板提交时自动使用预填分类
-const _origAddItem = addItem;
-addItem = async function(){
-  const cat = document.getElementById('ipt-title').dataset.prefillCat;
-  if (cat) {
-    // 暂存标题，让 AI 增强前已知分类意图
-    delete document.getElementById('ipt-title').dataset.prefillCat;
-  }
-  await _origAddItem();
-  // 如果 AI 没有给出分类但有预填分类，手动设置
-  if (cat) {
-    const items = load();
-    const last = items[items.length - 1];
-    if (last && (!last.category || last.category === '未分类')) {
-      last.category = cat;
-      save(items);
-      rebuild(); upStats(); rendL(); populateGalaxySelector();
-    }
-  }
-};
 
 function clearAll(){
   save([]);
@@ -1154,6 +1142,7 @@ async function ask(){
 function openP(n){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('open'));
   document.getElementById('p-'+n).classList.add('open');
+  if(n==='add'){window._prefillCat=null;document.getElementById('prefillHint').style.display='none'}
   if(n==='list')rendL();
   if(n==='settings'){
     document.getElementById('ipt-apikey').value=loadAK();
@@ -1166,7 +1155,10 @@ function openP(n){
     document.getElementById('uiColorVal').textContent=uc;
   }
 }
-function closeP(n){document.getElementById('p-'+n).classList.remove('open')}
+function closeP(n){
+  document.getElementById('p-'+n).classList.remove('open');
+  if(n==='add'){window._prefillCat=null;document.getElementById('prefillHint').style.display='none'}
+}
 
 function rendL(){
   const items=load(),el=document.getElementById('listC');
@@ -1665,8 +1657,10 @@ function populateGalaxySelector(){
   const cats=[...new Set(items.map(i=>i.category||'未分类'))].sort();
   sel.innerHTML='<option value="__all__">⟐ 全部分类</option>';
   cats.forEach(cat=>{
-    const gName = getGalaxyName(cat);
-    const opt=document.createElement('option');opt.value=cat;opt.textContent=gName?gName+' ('+cat+')':cat;
+    const g = _galaxiesCache[cat];
+    // 只有用户手动改过名才显示自定义名，AI 生成的科幻名忽略
+    const label = (g && g.name && g.aiGenerated === false) ? g.name : cat;
+    const opt=document.createElement('option');opt.value=cat;opt.textContent=label;
     sel.appendChild(opt);
   });
 }
@@ -1733,7 +1727,6 @@ function rebuild(){
     const pos=_positions[node.id]||{x:(Math.random()-.5)*3,y:(Math.random()-.5)*2,z:(Math.random()-.5)*3};
     const isHub=hubIds.has(node.id);
     const catName=item?.category||'未分类';
-    const galaxyName=getGalaxyName(catName)||catName;
     const h=createHoloSphere(pos,node,i,data.nodes.length,isHub,catName);
     nodeGroup.add(h.group);
 
