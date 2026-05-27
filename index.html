@@ -516,6 +516,11 @@ body {
 <div class="panel" id="p-add">
   <div class="ph"><h2>／ADD NODE</h2><button class="pc" onclick="closeP('add')">✕</button></div>
   <div id="prefillHint" style="display:none;padding:8px 14px;margin-bottom:14px;background:var(--accent-dim);border:1px solid var(--accent-border);border-radius:4px;font-size:12px;color:var(--accent-text-bright)"></div>
+  <div class="fg"><label>添加到星系（可选）</label>
+    <select id="ipt-category" style="width:100%;padding:10px 12px;background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);border-radius:6px;color:#fff;font-size:13px;outline:none;font-family:inherit;cursor:pointer">
+      <option value="">⟐ AI 自动判断</option>
+    </select>
+  </div>
   <div class="fg"><label>CONTENT</label><textarea id="ipt-content" placeholder="写下知识内容，AI 自动生成标题、分类、摘要…"></textarea></div>
   <div class="fg"><label>IMAGE（选填）</label>
     <div class="img-upload-wrap" onclick="document.getElementById('imgInput').click()">
@@ -939,12 +944,14 @@ async function generateGalaxyNames(items){
 async function addItem(){
   const c=document.getElementById('ipt-content').value.trim();
   if(!c){alert('请填写内容');return}
-  // 从内容首行/首句生成临时标题，AI 随后会替换
+  // 分类优先级：下拉选择 > 右键预填 > AI 自动
+  const selCat = document.getElementById('ipt-category').value;
+  const prefillCat = selCat || window._prefillCat || null;
   const fallbackTitle = (c.split(/[\n。！？,，]/)[0]||c).slice(0,30) || '未命名';
   const items=load();
   const newItem={
     id:Date.now(),title:fallbackTitle,content:c,
-    category:window._prefillCat||'未分类',summary:'',relatedIds:[],
+    category:prefillCat||'未分类',summary:'',relatedIds:[],
     image:currentImageDataURL||null,
     tags:document.getElementById('ipt-tags').value.split(/[,，]/).map(s=>s.trim()).filter(Boolean),
     fingerprint:extFP(fallbackTitle+' '+c),
@@ -955,6 +962,7 @@ async function addItem(){
 
   document.getElementById('ipt-content').value='';
   document.getElementById('ipt-tags').value='';
+  document.getElementById('ipt-category').value='';
   removeImage();
   closeP('add');
 
@@ -965,9 +973,9 @@ async function addItem(){
     const idx = all.findIndex(x => x.id === newItem.id);
     if (idx !== -1) { all[idx] = newItem; save(all); }
   }
-  // 预填分类优先于 AI 分类
-  if (window._prefillCat && newItem.category !== window._prefillCat) {
-    newItem.category = window._prefillCat;
+  // 用户指定分类优先于 AI
+  if (prefillCat && newItem.category !== prefillCat) {
+    newItem.category = prefillCat;
     const all2 = load();
     const idx2 = all2.findIndex(x => x.id === newItem.id);
     if (idx2 !== -1) { all2[idx2] = newItem; save(all2); }
@@ -1040,6 +1048,9 @@ function ctxAddChild(){
   openP('add');
   if (item.category && item.category !== '未分类') {
     window._prefillCat = item.category;
+    // 下拉框也选中
+    const sel = document.getElementById('ipt-category');
+    if (sel) sel.value = item.category;
     const hint = document.getElementById('prefillHint');
     hint.textContent = '⟐ 将添加至「' + item.category + '」星系';
     hint.style.display = 'block';
@@ -1142,7 +1153,17 @@ async function ask(){
 function openP(n){
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('open'));
   document.getElementById('p-'+n).classList.add('open');
-  if(n==='add'){window._prefillCat=null;document.getElementById('prefillHint').style.display='none'}
+  if(n==='add'){
+    window._prefillCat=null;
+    document.getElementById('prefillHint').style.display='none';
+    // 填充星系下拉
+    const sel=document.getElementById('ipt-category');
+    const items=load().map(migrate);
+    const cats=[...new Set(items.map(i=>i.category||'未分类'))].sort();
+    sel.innerHTML='<option value="">⟐ AI 自动判断</option>';
+    cats.forEach(cat=>{const o=document.createElement('option');o.value=cat;o.textContent=cat;sel.appendChild(o)});
+    sel.value='';
+  }
   if(n==='list')rendL();
   if(n==='settings'){
     document.getElementById('ipt-apikey').value=loadAK();
