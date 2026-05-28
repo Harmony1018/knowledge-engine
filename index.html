@@ -610,7 +610,7 @@ body {
 <div class="mb" id="modalBg" onclick="closeM()"></div>
 <div id="ctxMenu" class="ctx-menu">
   <div class="ctx-item" onclick="ctxEdit()">✎ 编辑知识</div>
-  <div class="ctx-item" onclick="ctxAddChild()">＋ 添加子知识</div>
+  <div class="ctx-item" onclick="ctxAddChild()" data-action="addChild">＋ 添加子知识</div>
   <div class="ctx-sep"></div>
   <div class="ctx-item ctx-danger" onclick="ctxDelete()">✕ 删除节点</div>
 </div>
@@ -630,8 +630,9 @@ function load(){return _itemsCache}
 function loadGalaxies(){return _galaxiesCache}
 
 async function sbFetch(path,opt){
-  try{const r=await fetch(SB_URL+'/rest/v1/'+path,opt);if(r.ok)return r;throw new Error(r.status)}
-  catch(e){throw e}
+  const r=await fetch(SB_URL+'/rest/v1/'+path,opt);
+  if(r.ok)return r;
+  throw new Error(r.status);
 }
 
 async function save(items){
@@ -655,7 +656,7 @@ async function save(items){
     if(toPost.length){
       await sbFetch('items',{method:'POST',headers:SB_HDR,body:JSON.stringify(toPost)}).catch(()=>{});
     }
-  }catch(e){}
+  }catch(e){console.warn('Supabase sync failed:',e.message||e)}
 }
 async function saveGalaxies(g){
   _galaxiesCache=g;
@@ -664,7 +665,7 @@ async function saveGalaxies(g){
     await sbFetch('galaxies?category=gte.',{method:'DELETE',headers:SB_HDR});
     const e=Object.entries(g);
     if(e.length)await sbFetch('galaxies',{method:'POST',headers:SB_HDR,body:JSON.stringify(e.map(([cat,d])=>({category:cat,name:d.name||cat,ai_generated:d.aiGenerated||false})))});
-  }catch(e){}
+  }catch(e){console.warn('Galaxy sync failed:',e.message||e)}
 }
 
 async function initData(){
@@ -689,7 +690,7 @@ async function initData(){
     if (gr && gr.length) {
       const gs={};gr.forEach(r=>{gs[r.category]={name:r.name,aiGenerated:r.ai_generated}});_galaxiesCache=gs;
     }
-  }catch(e){}
+  }catch(e){console.warn('Supabase init failed, using localStorage:',e.message||e)}
   // Supabase 没数据（RLS 限制或空库）→ 从 localStorage 恢复
   if (!fromSupabase) {
     try{_itemsCache=JSON.parse(localStorage.getItem(DBK))||[]}catch{_itemsCache=[]}
@@ -746,9 +747,9 @@ function applyUITheme(hex){
 function migrate(item){
   if(!item.category)item.category='未分类';
   if(!item.summary)item.summary='';
-  if(typeof item.relatedIds==='string')try{item.relatedIds=JSON.parse(item.relatedIds)}catch{e=>item.relatedIds=[]}
+  if(typeof item.relatedIds==='string')try{item.relatedIds=JSON.parse(item.relatedIds)}catch(e){item.relatedIds=[]}
   if(!Array.isArray(item.relatedIds))item.relatedIds=[];
-  if(typeof item.tags==='string')try{item.tags=JSON.parse(item.tags)}catch{e=>item.tags=[]}
+  if(typeof item.tags==='string')try{item.tags=JSON.parse(item.tags)}catch(e){item.tags=[]}
   if(!Array.isArray(item.tags))item.tags=[];
   if(!item.image)item.image=null;
   if(!item.fingerprint||!Array.isArray(item.fingerprint)||!item.fingerprint.length)
@@ -829,8 +830,8 @@ async function aiEnhance(item, allItems) {
     : '（空知识库）';
 
   const catsHint = existingCats
-    ? `【你的知识库已有分类（优先使用！）】${existingCats}\n【通用分类（仅在已有分类都不匹配时使用）】人工智能｜编程技术｜数据科学｜设计美学｜英语学习｜历史人文｜商业财经｜心理学｜医学健康｜物理天文｜数学逻辑｜哲学思辨｜法律政治｜音乐艺术｜影视文学｜游戏动漫｜美食烹饪｜旅行地理｜运动健身｜生活技巧｜情感人际｜教育学习｜其他`
-    : '【可用分类】人工智能｜编程技术｜数据科学｜设计美学｜英语学习｜历史人文｜商业财经｜心理学｜医学健康｜物理天文｜数学逻辑｜哲学思辨｜法律政治｜音乐艺术｜影视文学｜游戏动漫｜美食烹饪｜旅行地理｜运动健身｜生活技巧｜情感人际｜教育学习｜其他';
+    ? `【你的知识库已有分类（优先使用！）】${existingCats}\n（如以上分类都不匹配，可自行创建2-5字的新分类）`
+    : '（自行创建2-5字分类）';
 
   const prompt = `你是知识组织专家。分析以下内容，生成结构化元数据。
 
@@ -917,6 +918,7 @@ async function checkMergeCategories(items, apiKey) {
       const g = loadGalaxies(); delete g[m.from]; saveGalaxies(g);
     }
     save(items);
+    rebuild();upStats();rendL();populateGalaxySelector();
     console.log('分类合并:', result.merges);
   } catch(e) { console.log('Merge check failed:', e); }
 }
@@ -961,19 +963,12 @@ async function addItem(){
   closeP('add');
 
   document.getElementById('aiIndicator').classList.add('show');
-  const enhanced = await aiEnhance(newItem, items);
-  if (enhanced) {
-    const all = load();
-    const idx = all.findIndex(x => x.id === newItem.id);
-    if (idx !== -1) { all[idx] = newItem; save(all); }
-  }
+  await aiEnhance(newItem, items);
   // 用户指定分类优先于 AI
   if (prefillCat && newItem.category !== prefillCat) {
     newItem.category = prefillCat;
-    const all2 = load();
-    const idx2 = all2.findIndex(x => x.id === newItem.id);
-    if (idx2 !== -1) { all2[idx2] = newItem; save(all2); }
   }
+  save(items);
   document.getElementById('aiIndicator').classList.remove('show');
   rebuild();
   upStats();
@@ -1008,20 +1003,13 @@ async function bulkImport(){
       added++;
     }
     save(items);
-    // Run AI enhancement on each imported item
-    const allItems=load();
+    // Run AI enhancement on each imported item (mutates _itemsCache in-place)
     st.textContent='✅ 入库 '+added+' 条，正在进行 AI 分析...';
-    for(let i=allItems.length-added;i<allItems.length;i++){
-      st.textContent='⏳ AI 分析中 ('+(i-(allItems.length-added)+1)+'/'+added+')...';
-      try{await aiEnhance(allItems[i],allItems)}catch(e){console.log('Bulk enhance failed for item',allItems[i].id,e)}
+    for(let i=items.length-added;i<items.length;i++){
+      st.textContent='⏳ AI 分析中 ('+(i-(items.length-added)+1)+'/'+added+')...';
+      try{await aiEnhance(items[i],items)}catch(e){console.log('Bulk enhance failed for item',items[i].id,e)}
     }
-    const finalItems=load();
-    for(let i=finalItems.length-added;i<finalItems.length;i++){
-      const enhanced=allItems[i];
-      const idx=finalItems.findIndex(x=>x.id===enhanced.id);
-      if(idx!==-1)finalItems[idx]=enhanced;
-    }
-    save(finalItems);
+    save(items);
     st.textContent='✅ 成功导入 '+added+' 条知识！';
     document.getElementById('ipt-bulk').value='';
     rebuild();upStats();    debouncedCheckMerge();
@@ -1060,10 +1048,10 @@ function ctxAddChild(){
     window._prefillCat = item.category;
     const sel = document.getElementById('ipt-category');
     if (sel) sel.value = item.category;
-    const hint = document.getElementById('prefillHint');
-    hint.textContent = '⟐ 将添加为「' + item.title + '」的子知识';
-    hint.style.display = 'block';
   }
+  const hint = document.getElementById('prefillHint');
+  hint.textContent = '⟐ 将添加为「' + item.title + '」的子知识';
+  hint.style.display = 'block';
 }
 function ctxDelete(){
   const id = window._ctxNodeId;
@@ -1168,7 +1156,7 @@ function openP(n){
     document.getElementById('prefillHint').style.display='none';
     // 填充星系下拉
     const sel=document.getElementById('ipt-category');
-    const items=load().map(migrate);
+    const items=load();
     const cats=[...new Set(items.map(i=>i.category||'未分类'))].sort();
     sel.innerHTML='<option value="">⟐ AI 自动判断</option>';
     cats.forEach(cat=>{const o=document.createElement('option');o.value=cat;o.textContent=cat;sel.appendChild(o)});
@@ -1221,11 +1209,12 @@ function showCategoryOverview(cat){
   document.getElementById('detailTitle').textContent=cat;
   document.getElementById('detailSummary').style.display='none';
   document.getElementById('detailImage').style.display='none';
-  const buildTree=function(pid){
+  const buildTree=function(pid,depth){
+    if(depth>10)return'';
     const children=items.filter(i=>i.parentId===pid);
     if(!children.length)return'';
     return children.map(i=>{
-      const subs=buildTree(i.id);
+      const subs=buildTree(i.id,(depth||0)+1);
       return'<div class="kc" onclick="showD('+i.id+')" style="cursor:pointer;padding:8px 12px;margin:4px 0;border:1px solid rgba(255,255,255,.06);border-radius:4px">'+
       '<strong style="color:var(--accent-text-bright)">'+i.title+'</strong>'+
       '<div style="font-size:11px;color:rgba(255,255,255,.35)">'+(i.summary||(i.content||'').slice(0,50))+'</div>'+
@@ -1376,11 +1365,14 @@ function closeM(){document.getElementById('modal').classList.remove('o');documen
 
 function upStats(){
   const d=getGraphData();
-  document.getElementById('hudNodes').textContent='NODES: '+d.nodes.length;
+  const realCount=load().length;
+  document.getElementById('hudNodes').textContent='NODES: '+realCount;
   document.getElementById('hudLinks').textContent='LINKS: '+d.links.length;
   document.getElementById('hudStatus').textContent='SYSTEM ACTIVE';
+  const el=document.getElementById('setCount');
+  if(el)el.textContent=realCount;
   const eh=document.getElementById('emptyHint');
-  if(d.nodes.length===0){eh.classList.remove('hidden')}else{eh.classList.add('hidden')}
+  if(realCount===0){eh.classList.remove('hidden')}else{eh.classList.add('hidden')}
 }
 
 // ===== 图数据 =====
@@ -1475,8 +1467,8 @@ renderer.setPixelRatio(Math.min(devicePixelRatio,isMobile?1.5:2));
 container.appendChild(renderer.domElement);
 
 const controls=new THREE.OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true;controls.dampingFactor=isMobile?.12:.08;
-controls.autoRotate=true;controls.autoRotateSpeed=isMobile?.25:.4;
+controls.enableDamping=true;controls.dampingFactor=isMobile?0.12:0.08;
+controls.autoRotate=true;controls.autoRotateSpeed=isMobile?0.25:0.4;
 controls.minDistance=2;controls.maxDistance=isMobile?18:25;
 controls.screenSpacePanning=true;
 controls.panSpeed=isMobile?1.0:1.5;
@@ -1502,7 +1494,7 @@ for(let i=0;i<STAR_COUNT;i++){
 }
 sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
 sg.setAttribute('color',new THREE.BufferAttribute(sc2,3));
-const sm=new THREE.PointsMaterial({size:isMobile?.06:.08,vertexColors:true,transparent:true,opacity:.9,blending:THREE.NormalBlending,depthWrite:false,sizeAttenuation:true});
+const sm=new THREE.PointsMaterial({size:isMobile?0.06:0.08,vertexColors:true,transparent:true,opacity:.9,blending:THREE.NormalBlending,depthWrite:false,sizeAttenuation:true});
 const stars=new THREE.Points(sg,sm);starField.add(stars);
 
 // 大亮星（减少数量）
@@ -1524,7 +1516,7 @@ for(let i=0;i<BRIGHT_COUNT;i++){
 
 // ===== 节点系统 =====
 const nodeGroup=new THREE.Group();scene.add(nodeGroup);
-let allMeshes=[];let linkLines=null;let linkGroup=null;let linkGlowLines=null;let categoryLabels=[];
+let allMeshes=[];let linkLines=null;let linkGroup=null;let linkGlowLines=null;
 const clock=new THREE.Clock();
 
 // 相机聚焦状态
@@ -1742,19 +1734,18 @@ let _positions={};
 function populateGalaxySelector(){
   const sel=document.getElementById('galaxySelector');
   if(!sel)return;
-  const items=load().map(migrate);
-  const itemCats=new Set(items.map(i=>i.category||'未分类'));
-  const allCats=[...new Set([...itemCats,...Object.keys(_galaxiesCache)])].sort();
+  const items=load();
+  const cats=[...new Set(items.map(i=>i.category||'未分类'))].sort();
   sel.innerHTML='<option value="__all__">⟐ 全部分类</option>';
-  allCats.forEach(cat=>{
-    const opt=document.createElement('option');opt.value=cat;opt.textContent=cat+(itemCats.has(cat)?'':' (空)');
+  cats.forEach(cat=>{
+    const opt=document.createElement('option');opt.value=cat;opt.textContent=cat;
     sel.appendChild(opt);
   });
 }
 
 // ===== 相机聚焦（一次性过渡，不限制后续旋转） =====
 function focusOnGalaxy(categoryName){
-  const items=load().map(migrate);
+  const items=load();
   const catItems=items.filter(i=>(i.category||'未分类')===categoryName);
   if(!catItems.length)return;
   let cx=0,cy=0,cz=0,count=0;
@@ -1796,15 +1787,21 @@ function rebuild(){
 
   _positions=computePositions(items);
 
-  // Compute depth level for each node (for sizing)
-  function getLevel(nodeId){
+  // Compute depth level for each node (for sizing, max 3, cycle-safe)
+  const _levelCache={};
+  function getLevel(nodeId,depth){
+    depth=depth||0;
+    if(depth>10)return 1; // cycle guard
+    if(_levelCache[nodeId]!==undefined)return _levelCache[nodeId];
     const item=items.find(x=>x.id===nodeId);
-    if(!item||!item.parentId)return 1;
-    return 1+getLevel(item.parentId);
+    if(!item||!item.parentId){_levelCache[nodeId]=1;return 1}
+    const l=1+getLevel(item.parentId,depth+1);
+    _levelCache[nodeId]=Math.min(3,l);
+    return _levelCache[nodeId];
   }
 
   // 渲染节点（虚拟 Hub 用金色大球，子节点按层级大小）
-  _nodeLabels=[];
+  window._nodeLabels=[];
   data.nodes.forEach((node,i)=>{
     const pos=_positions[node.id]||{x:(Math.random()-.5)*3,y:(Math.random()-.5)*2,z:(Math.random()-.5)*3};
     const isHub=node.isVirtualHub===true;
@@ -1892,29 +1889,31 @@ function rebuild(){
     else showD(m.nodeId);
   };
 
-  // 右键菜单
-  window._ctxNodeId = null;
-  function hideCtx(){ document.getElementById('ctxMenu').classList.remove('show'); window._ctxNodeId = null; }
-  renderer.domElement.addEventListener('contextmenu', ev => {
-    ev.preventDefault();
-    const m = _hitNode(ev);
-    if (!m) { hideCtx(); return; }
-    window._ctxNodeId = m.nodeId;
-    window._ctxIsHub = m.isVirtualHub||false;
-    // Show/hide context menu items based on hub status
-    const addChildEl=document.querySelector('#ctxMenu .ctx-item:nth-child(2)');
-    if(addChildEl)addChildEl.style.display=m.isVirtualHub?'none':'';
-    const menu = document.getElementById('ctxMenu');
-    menu.style.left = ev.clientX + 'px';
-    menu.style.top = ev.clientY + 'px';
-    const mw = menu.offsetWidth || 160, mh = menu.offsetHeight || 130;
-    if (ev.clientX + mw > innerWidth) menu.style.left = (ev.clientX - mw) + 'px';
-    if (ev.clientY + mh > innerHeight) menu.style.top = (ev.clientY - mh) + 'px';
-    menu.classList.add('show');
-  });
-  document.addEventListener('click', ev => {
-    if (!document.getElementById('ctxMenu').contains(ev.target)) hideCtx();
-  });
+  // 右键菜单 setup (runs once)
+  if(!window._ctxListenersInstalled){
+    window._ctxListenersInstalled=true;
+    window._ctxNodeId = null;
+    window.hideCtx = function(){ document.getElementById('ctxMenu').classList.remove('show'); window._ctxNodeId = null; };
+    renderer.domElement.addEventListener('contextmenu', ev => {
+      ev.preventDefault();
+      const m = window._hitNodeFn ? window._hitNodeFn(ev) : null;
+      if (!m) { window.hideCtx(); return; }
+      window._ctxNodeId = m.nodeId;
+      window._ctxIsHub = m.isVirtualHub||false;
+      const addChildEl=document.querySelector('#ctxMenu .ctx-item[data-action="addChild"]');
+      if(addChildEl)addChildEl.style.display=m.isVirtualHub?'none':'';
+      const menu = document.getElementById('ctxMenu');
+      menu.style.left = ev.clientX + 'px'; menu.style.top = ev.clientY + 'px';
+      const mw = menu.offsetWidth || 160, mh = menu.offsetHeight || 130;
+      if (ev.clientX + mw > innerWidth) menu.style.left = (ev.clientX - mw) + 'px';
+      if (ev.clientY + mh > innerHeight) menu.style.top = (ev.clientY - mh) + 'px';
+      menu.classList.add('show');
+    });
+    document.addEventListener('click', ev => {
+      if (!document.getElementById('ctxMenu').contains(ev.target)) window.hideCtx();
+    });
+  }
+  window._hitNodeFn = _hitNode;
 }
 
 // ===== 动画循环 =====
