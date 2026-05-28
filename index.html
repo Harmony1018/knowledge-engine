@@ -932,56 +932,6 @@ function debouncedCheckMerge(){
   },3000);
 }
 
-// ===== AI 星系命名 =====
-const FALLBACK_GALAXY = {
-  '未分类':'混沌星域','人工智能':'智械星云','编程技术':'代码星河',
-  '数据科学':'数据星海','设计美学':'幻彩星云','英语学习':'语汇星环',
-  '历史人文':'时光回廊','商业财经':'财富星云','心理学':'心智迷宫',
-  '医学健康':'生命之泉','物理天文':'虚空星海','数学逻辑':'理性之光',
-  '哲学思辨':'思想深渊','法律政治':'秩序星环','音乐艺术':'韵律星河',
-  '影视文学':'故事宇宙','游戏动漫':'幻境乐园','美食烹饪':'味觉星域',
-  '旅行地理':'万界之门','运动健身':'活力脉冲','生活技巧':'日常魔法',
-  '情感人际':'心灵港湾','教育学习':'知识灯塔','生物自然':'生命密码',
-  '化学材料':'元素熔炉','环境生态':'绿色苍穹','宗教神话':'信仰星空',
-  '军事战略':'铁血堡垒','建筑规划':'空间诗篇'
-};
-function fallbackGalaxyName(cat){return FALLBACK_GALAXY[cat]||(cat.slice(0,2)+'星域')}
-
-async function generateGalaxyNames(items){
-  const apiKey=loadAK();
-  const cats=[...new Set(items.map(i=>i.category||'未分类'))];
-  const existing=loadGalaxies();
-  const updated={...existing};
-
-  // 先用 fallback 名填充
-  cats.forEach(c=>{if(!updated[c]||!updated[c].name)updated[c]={name:fallbackGalaxyName(c),aiGenerated:false}});
-  saveGalaxies(updated);
-  populateGalaxySelector();
-
-  const needGen=cats.filter(c=>!existing[c]||!existing[c].name);
-  if(!apiKey||!needGen.length)return;
-
-  document.getElementById('aiIndicator').classList.add('show');
-  for(const cat of needGen){
-    const catItems=items.filter(i=>(i.category||'未分类')===cat);
-    const titles=catItems.map(i=>i.title).slice(0,6).join(', ');
-    const prompt='为以下知识分类生成一个科幻风格的星系名（2-4个字），要体现该分类下知识点的共同主题。\n\n分类:'+cat+'\n知识点:'+titles+'\n\n返回JSON:{"galaxyName":"..."}';
-    try{
-      const res=await fetch('https://api.deepseek.com/chat/completions',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':'Bearer '+apiKey},
-        body:JSON.stringify({model:'deepseek-chat',messages:[{role:'system',content:'你是一个科幻命名AI，只返回JSON。'},{role:'user',content:prompt}],temperature:.8,max_tokens:200})
-      });
-      if(res.ok){
-        const d=await res.json();
-        const r=JSON.parse(d.choices[0].message.content);
-        if(r&&r.galaxyName){updated[cat]={name:r.galaxyName,aiGenerated:true};saveGalaxies(updated)}
-      }
-    }catch(e){console.log('Galaxy name gen failed:',cat,e)}
-  }
-  document.getElementById('aiIndicator').classList.remove('show');
-  populateGalaxySelector();
-}
 
 // ===== 添加知识 =====
 async function addItem(){
@@ -1027,8 +977,7 @@ async function addItem(){
   document.getElementById('aiIndicator').classList.remove('show');
   rebuild();
   upStats();
-  generateGalaxyNames(load());
-  debouncedCheckMerge();
+    debouncedCheckMerge();
 }
 
 // ===== AI 批量导入 =====
@@ -1075,8 +1024,7 @@ async function bulkImport(){
     save(finalItems);
     st.textContent='✅ 成功导入 '+added+' 条知识！';
     document.getElementById('ipt-bulk').value='';
-    rebuild();upStats();generateGalaxyNames(load());
-    debouncedCheckMerge();
+    rebuild();upStats();    debouncedCheckMerge();
   }catch(e){st.textContent='❌ 错误: '+e.message}
   finally{document.getElementById('aiIndicator').classList.remove('show')}
 }
@@ -1092,8 +1040,7 @@ function delItem(id){
   save(items);
   rebuild();upStats();rendL();
   populateGalaxySelector();
-  generateGalaxyNames(load());
-}
+  }
 
 // ===== 右键菜单操作 =====
 function ctxEdit(){
@@ -1271,7 +1218,7 @@ function showCategoryOverview(cat){
   document.getElementById('detailEdit').style.display='none';
   document.getElementById('btnEditDetail').style.display='none';
   document.getElementById('detailCategory').textContent='◆ GALAXY HUB';
-  document.getElementById('detailTitle').textContent=getGalaxyName(cat)||cat;
+  document.getElementById('detailTitle').textContent=cat;
   document.getElementById('detailSummary').style.display='none';
   document.getElementById('detailImage').style.display='none';
   const buildTree=function(pid){
@@ -1384,10 +1331,9 @@ function saveDetail(){
   item.fingerprint = extFP(item.title + ' ' + item.content);
   save(items);
 
-  // 如果分类变了，更新星系
+  // 如果分类变了
   if (oldCat !== newCat) {
-    generateGalaxyNames(items);
-    checkMergeCategories(items, loadAK());
+    debouncedCheckMerge();
   }
 
   cancelEdit();
@@ -1445,7 +1391,7 @@ function getGraphData(){
   // Virtual hub nodes (one per category)
   const cats=[...new Set(items.map(i=>i.category||'未分类'))];
   const hubNodes=cats.map(cat=>({
-    id:'__hub__'+cat,title:getGalaxyName(cat)||cat,category:cat,
+    id:'__hub__'+cat,title:cat,category:cat,
     summary:'',isVirtualHub:true
   }));
   const nodes=[...hubNodes,...realNodes];
@@ -1798,13 +1744,10 @@ function populateGalaxySelector(){
   if(!sel)return;
   const items=load().map(migrate);
   const itemCats=new Set(items.map(i=>i.category||'未分类'));
-  // Include galaxy cache entries even if empty
   const allCats=[...new Set([...itemCats,...Object.keys(_galaxiesCache)])].sort();
   sel.innerHTML='<option value="__all__">⟐ 全部分类</option>';
   allCats.forEach(cat=>{
-    const g=_galaxiesCache[cat];
-    const label=(g&&g.name&&g.aiGenerated===false)?g.name:cat;
-    const opt=document.createElement('option');opt.value=cat;opt.textContent=label+(itemCats.has(cat)?'':' (空)');
+    const opt=document.createElement('option');opt.value=cat;opt.textContent=cat+(itemCats.has(cat)?'':' (空)');
     sel.appendChild(opt);
   });
 }
@@ -1873,8 +1816,7 @@ function rebuild(){
     // 标签数据收集
     let labelText;
     if(isHub){
-      const gname=getGalaxyName(catName)||catName;
-      labelText=gname.length>5?gname.slice(0,5)+'…':gname;
+      labelText=catName.length>5?catName.slice(0,5)+'…':catName;
     } else {
       const t=(node.title||'').slice(0,18);
       const chunks=[];
@@ -2088,8 +2030,7 @@ onresize=()=>{clearTimeout(_resizeTimer);_resizeTimer=setTimeout(()=>{camera.asp
     const uc=document.getElementById('ipt-ui-color');if(uc)uc.value=uiColor;
   }catch(e){console.log(e)}
   rebuild();
-  generateGalaxyNames(load());
-  setTimeout(()=>document.getElementById('loading').classList.add('hidden'),600);
+    setTimeout(()=>document.getElementById('loading').classList.add('hidden'),600);
 })();
 
 document.getElementById('ipt-apikey')?.addEventListener('input',function(){
