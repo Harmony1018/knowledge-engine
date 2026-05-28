@@ -9,6 +9,7 @@ CREATE TABLE items (
   image TEXT,
   related_ids JSONB DEFAULT '[]',
   fingerprint JSONB DEFAULT '[]',
+  parent_id BIGINT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

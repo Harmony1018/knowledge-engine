@@ -419,19 +419,13 @@ body {
 }
 .node-label {
   font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;
-  letter-spacing:0; color:#ff0;
+  letter-spacing:0;
   transform:translate(-50%,-50%);
-  background:#000; border:2px solid #f00;
-  border-radius:8px; padding:6px 16px;
   white-space:pre-line; text-align:center; line-height:1.3;
-  font-weight:900;
   transition:none;
 }
 .hub-label {
-  font-weight:900; padding:8px 22px;
-  color:#0f0;
-  background:#000; border:3px solid #ff0;
-  border-radius:10px;
+  font-weight:700;
   transition:none;
 }
 
@@ -644,12 +638,23 @@ async function save(items){
   _itemsCache=items;
   try{localStorage.setItem(DBK,JSON.stringify(items))}catch(e){}
   try{
-    await sbFetch('items?id=gte.0',{method:'DELETE',headers:SB_HDR});
-    if(items.length)await sbFetch('items',{method:'POST',headers:SB_HDR,body:JSON.stringify(items.map(i=>({
-      id:i.id,title:i.title,content:i.content,category:i.category||'未分类',summary:i.summary||'',
-      tags:i.tags||[],image:i.image||null,related_ids:i.relatedIds||[],
-      fingerprint:i.fingerprint||[],created_at:i.createdAt||new Date().toISOString()
-    })))});
+    // Fetch existing server IDs to detect deletions
+    const existing=await sbFetch('items?select=id',{headers:SB_HDR}).then(r=>r.json()).catch(()=>[]);
+    const existingIds=new Set((existing||[]).map(x=>x.id));
+    const newIds=new Set(items.map(i=>i.id));
+    // Delete removed items
+    for(const id of existingIds){if(!newIds.has(id)){await sbFetch('items?id=eq.'+id,{method:'DELETE',headers:SB_HDR}).catch(()=>{})}}
+    // Upsert items (PATCH existing, POST new)
+    const body=items.map(i=>({id:i.id,title:i.title,content:i.content,category:i.category||'未分类',summary:i.summary||'',tags:i.tags||[],image:i.image||null,related_ids:i.relatedIds||[],parent_id:i.parentId||null,fingerprint:i.fingerprint||[],created_at:i.createdAt||new Date().toISOString()}));
+    const toPatch=body.filter(i=>existingIds.has(i.id));
+    const toPost=body.filter(i=>!existingIds.has(i.id));
+    if(toPatch.length){
+      // Patch in batches (Supabase allows PATCH with filter, but for bulk we do individual)
+      for(const item of toPatch){await sbFetch('items?id=eq.'+item.id,{method:'PATCH',headers:{...SB_HDR,'Prefer':'return=minimal'},body:JSON.stringify(item)}).catch(()=>{})}
+    }
+    if(toPost.length){
+      await sbFetch('items',{method:'POST',headers:SB_HDR,body:JSON.stringify(toPost)}).catch(()=>{});
+    }
   }catch(e){}
 }
 async function saveGalaxies(g){
@@ -675,6 +680,7 @@ async function initData(){
         tags:typeof i.tags==='string'?JSON.parse(i.tags):(i.tags||[]),
         image:i.image,
         relatedIds:typeof i.related_ids==='string'?JSON.parse(i.related_ids):(i.related_ids||[]),
+        parentId:i.parent_id||null,
         fingerprint:typeof i.fingerprint==='string'?JSON.parse(i.fingerprint):(i.fingerprint||[]),
         createdAt:i.created_at
       }));
@@ -694,7 +700,7 @@ async function initData(){
     _itemsCache=DEMO_ITEMS.map((d,i)=>({
       id:Date.now()+i*1000+Math.floor(Math.random()*999),
       title:d.title,content:d.content,category:d.category,summary:d.summary,
-      tags:d.tags,image:null,relatedIds:[],
+      tags:d.tags,image:null,parentId:null,relatedIds:[],
       fingerprint:extFP(d.title+' '+d.content),
       createdAt:new Date().toISOString()
     }));
@@ -747,6 +753,7 @@ function migrate(item){
   if(!item.image)item.image=null;
   if(!item.fingerprint||!Array.isArray(item.fingerprint)||!item.fingerprint.length)
     item.fingerprint=extFP((item.title||'')+' '+(item.content||''));
+  if(item.parentId===undefined||item.parentId===null)item.parentId=null;
   return item;
 }
 
@@ -757,7 +764,7 @@ function extFP(text){
   for(let i=0;i<cn.length-1;i++) sig.add(cn.slice(i,i+2));
   (t.match(/[a-z][a-z0-9+#.-]{2,}/g)||[]).forEach(w=>sig.add(w));
   t.split(/[，。！？、；：""''（）\[\]【】{}《》\s]+/).forEach(s=>{const tr=s.trim();if(tr.length>=2&&tr.length<=8)sig.add(tr)});
-  return [...sig].slice(0,25);
+  return [...sig].slice(0,50);
 }
 function rel(fp1,fp2){
   const s1=new Set(fp1),s2=new Set(fp2);
@@ -914,10 +921,29 @@ async function checkMergeCategories(items, apiKey) {
   } catch(e) { console.log('Merge check failed:', e); }
 }
 
+// Debounced merge check (avoids calling on every add)
+let _mergeTimer=null;
+function debouncedCheckMerge(){
+  clearTimeout(_mergeTimer);
+  _mergeTimer=setTimeout(()=>{
+    const items=load();
+    const ak=loadAK();
+    if(ak&&items.length>=2)checkMergeCategories(items,ak);
+  },3000);
+}
+
 // ===== AI 星系命名 =====
 const FALLBACK_GALAXY = {
   '未分类':'混沌星域','人工智能':'智械星云','编程技术':'代码星河',
-  '数据科学':'数据星海','设计美学':'幻彩星云','英语学习':'语汇星环'
+  '数据科学':'数据星海','设计美学':'幻彩星云','英语学习':'语汇星环',
+  '历史人文':'时光回廊','商业财经':'财富星云','心理学':'心智迷宫',
+  '医学健康':'生命之泉','物理天文':'虚空星海','数学逻辑':'理性之光',
+  '哲学思辨':'思想深渊','法律政治':'秩序星环','音乐艺术':'韵律星河',
+  '影视文学':'故事宇宙','游戏动漫':'幻境乐园','美食烹饪':'味觉星域',
+  '旅行地理':'万界之门','运动健身':'活力脉冲','生活技巧':'日常魔法',
+  '情感人际':'心灵港湾','教育学习':'知识灯塔','生物自然':'生命密码',
+  '化学材料':'元素熔炉','环境生态':'绿色苍穹','宗教神话':'信仰星空',
+  '军事战略':'铁血堡垒','建筑规划':'空间诗篇'
 };
 function fallbackGalaxyName(cat){return FALLBACK_GALAXY[cat]||(cat.slice(0,2)+'星域')}
 
@@ -970,6 +996,7 @@ async function addItem(){
     id:Date.now(),title:fallbackTitle,content:c,
     category:prefillCat||'未分类',summary:'',relatedIds:[],
     image:currentImageDataURL||null,
+    parentId:window._prefillParentId||null,
     tags:document.getElementById('ipt-tags').value.split(/[,，]/).map(s=>s.trim()).filter(Boolean),
     fingerprint:extFP(fallbackTitle+' '+c),
     createdAt:new Date().toISOString()
@@ -1001,7 +1028,7 @@ async function addItem(){
   rebuild();
   upStats();
   generateGalaxyNames(load());
-  checkMergeCategories(load(), loadAK());
+  debouncedCheckMerge();
 }
 
 // ===== AI 批量导入 =====
@@ -1028,20 +1055,38 @@ async function bulkImport(){
     const items=load();let added=0;
     for(const e of entries){
       if(!e.title||!e.content)continue;
-      items.push({id:Date.now()+added,title:e.title,content:e.content,category:e.category||'未分类',summary:e.summary||'',tags:e.tags||[],image:null,relatedIds:[],fingerprint:extFP(e.title+' '+e.content),createdAt:new Date().toISOString()});
+      items.push({id:Date.now()+added,title:e.title,content:e.content,category:e.category||'未分类',summary:e.summary||'',tags:e.tags||[],image:null,parentId:null,relatedIds:[],fingerprint:extFP(e.title+' '+e.content),createdAt:new Date().toISOString()});
       added++;
     }
     save(items);
+    // Run AI enhancement on each imported item
+    const allItems=load();
+    st.textContent='✅ 入库 '+added+' 条，正在进行 AI 分析...';
+    for(let i=allItems.length-added;i<allItems.length;i++){
+      st.textContent='⏳ AI 分析中 ('+(i-(allItems.length-added)+1)+'/'+added+')...';
+      try{await aiEnhance(allItems[i],allItems)}catch(e){console.log('Bulk enhance failed for item',allItems[i].id,e)}
+    }
+    const finalItems=load();
+    for(let i=finalItems.length-added;i<finalItems.length;i++){
+      const enhanced=allItems[i];
+      const idx=finalItems.findIndex(x=>x.id===enhanced.id);
+      if(idx!==-1)finalItems[idx]=enhanced;
+    }
+    save(finalItems);
     st.textContent='✅ 成功导入 '+added+' 条知识！';
     document.getElementById('ipt-bulk').value='';
     rebuild();upStats();generateGalaxyNames(load());
-    checkMergeCategories(load(), loadAK());
+    debouncedCheckMerge();
   }catch(e){st.textContent='❌ 错误: '+e.message}
   finally{document.getElementById('aiIndicator').classList.remove('show')}
 }
 
 function delItem(id){
   let items=load();
+  const deleted=items.find(i=>i.id===id);
+  const deletedParentId=deleted?deleted.parentId:null;
+  // Promote orphans: children get deleted node's parentId
+  items.forEach(i=>{if(i.parentId===id)i.parentId=deletedParentId});
   items=items.filter(i=>i.id!==id);
   items.forEach(i=>{i.relatedIds=i.relatedIds.filter(rid=>rid!==id)});
   save(items);
@@ -1063,13 +1108,13 @@ function ctxAddChild(){
   const item = load().find(x => x.id === id);
   if (!item) return;
   openP('add');
+  window._prefillParentId = id;
   if (item.category && item.category !== '未分类') {
     window._prefillCat = item.category;
-    // 下拉框也选中
     const sel = document.getElementById('ipt-category');
     if (sel) sel.value = item.category;
     const hint = document.getElementById('prefillHint');
-    hint.textContent = '⟐ 将添加至「' + item.category + '」星系';
+    hint.textContent = '⟐ 将添加为「' + item.title + '」的子知识';
     hint.style.display = 'block';
   }
 }
@@ -1172,6 +1217,7 @@ function openP(n){
   document.getElementById('p-'+n).classList.add('open');
   if(n==='add'){
     window._prefillCat=null;
+    window._prefillParentId=null;
     document.getElementById('prefillHint').style.display='none';
     // 填充星系下拉
     const sel=document.getElementById('ipt-category');
@@ -1195,7 +1241,7 @@ function openP(n){
 }
 function closeP(n){
   document.getElementById('p-'+n).classList.remove('open');
-  if(n==='add'){window._prefillCat=null;document.getElementById('prefillHint').style.display='none'}
+  if(n==='add'){window._prefillCat=null;window._prefillParentId=null;document.getElementById('prefillHint').style.display='none'}
 }
 
 function rendL(){
@@ -1214,6 +1260,45 @@ function rendL(){
   });
   html+='</div>';
   el.innerHTML=html;
+}
+
+// ===== 分类总览（点击虚拟 Hub）=====
+function showCategoryOverview(cat){
+  const items=load().filter(i=>(i.category||'未分类')===cat);
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('open'));
+  document.getElementById('p-detail').classList.add('open');
+  document.getElementById('detailView').style.display='block';
+  document.getElementById('detailEdit').style.display='none';
+  document.getElementById('btnEditDetail').style.display='none';
+  document.getElementById('detailCategory').textContent='◆ GALAXY HUB';
+  document.getElementById('detailTitle').textContent=getGalaxyName(cat)||cat;
+  document.getElementById('detailSummary').style.display='none';
+  document.getElementById('detailImage').style.display='none';
+  const buildTree=function(pid){
+    const children=items.filter(i=>i.parentId===pid);
+    if(!children.length)return'';
+    return children.map(i=>{
+      const subs=buildTree(i.id);
+      return'<div class="kc" onclick="showD('+i.id+')" style="cursor:pointer;padding:8px 12px;margin:4px 0;border:1px solid rgba(255,255,255,.06);border-radius:4px">'+
+      '<strong style="color:var(--accent-text-bright)">'+i.title+'</strong>'+
+      '<div style="font-size:11px;color:rgba(255,255,255,.35)">'+(i.summary||(i.content||'').slice(0,50))+'</div>'+
+      (subs?'<div style="margin-left:16px">'+subs+'</div>':'')+
+      '</div>';
+    }).join('');
+  };
+  const l1Items=items.filter(i=>!i.parentId);
+  document.getElementById('detailContent').innerHTML=
+    '<div style="color:rgba(255,255,255,.5);margin-bottom:8px">'+items.length+' 个知识点</div>'+
+    l1Items.map(i=>{
+      const subs=buildTree(i.id);
+      return'<div class="kc" onclick="showD('+i.id+')" style="cursor:pointer;padding:8px 12px;margin:4px 0;border:1px solid rgba(255,255,255,.06);border-radius:4px">'+
+      '<strong style="color:var(--accent-text-bright)">'+i.title+'</strong>'+
+      '<div style="font-size:11px;color:rgba(255,255,255,.35)">'+(i.summary||(i.content||'').slice(0,50))+'</div>'+
+      (subs?'<div style="margin-left:16px">'+subs+'</div>':'')+
+      '</div>';
+    }).join('');
+  document.getElementById('detailTags').style.display='none';
+  document.getElementById('detailRelated').style.display='none';
 }
 
 // ===== 详情面板 =====
@@ -1251,8 +1336,14 @@ function showD(id){
   const relEl=document.getElementById('detailRelated');
   const all=load();
   const related=(item.relatedIds||[]).map(rid=>all.find(x=>x.id===rid)).filter(Boolean);
-  if(related.length){
-    relEl.innerHTML='<h4>关联节点</h4>'+related.map(r=>'<div class="dt-related-item" onclick="showD('+r.id+')">'+r.title+'<span style="float:right;font-size:10px;color:rgba(255,255,255,.2)">'+(r.category||'未分类')+'</span></div>').join('');
+  // Also show reverse relations (items that reference THIS item)
+  const reverseRelated=all.filter(x=>(x.relatedIds||[]).includes(item.id)&&!related.find(r=>r.id===x.id));
+  const allRelated=[...related,...reverseRelated];
+  if(allRelated.length){
+    relEl.innerHTML='<h4>关联节点</h4>'+
+      related.map(r=>'<div class="dt-related-item" onclick="showD('+r.id+')">'+r.title+'<span style="float:right;font-size:10px;color:rgba(255,255,255,.2)">'+(r.category||'未分类')+'</span></div>').join('')+
+      (reverseRelated.length?'<div style="font-size:10px;color:rgba(255,255,255,.2);padding:4px 0">被以下节点关联：</div>':'')+
+      reverseRelated.map(r=>'<div class="dt-related-item" onclick="showD('+r.id+')" style="opacity:.6">'+r.title+'<span style="float:right;font-size:10px;color:rgba(255,255,255,.15)">'+(r.category||'未分类')+'</span></div>').join('');
     relEl.style.display='block';
   } else relEl.style.display='none';
 }
@@ -1347,50 +1438,42 @@ function upStats(){
 }
 
 // ===== 图数据 =====
-function hubScore(item,group){
-  let s=0;
-  s+=group.filter(x=>x.id!==item.id&&(x.relatedIds||[]).includes(item.id)).length*3;
-  s+=Math.min((item.content||'').length/300,2);
-  s+=Math.min((item.title||'').length/8,1);
-  const others=group.filter(x=>x.id!==item.id);
-  if(others.length){
-    s+=others.reduce((sum,x)=>sum+rel(getFP(item),getFP(x)),0)/others.length*2;
-  }
-  return s;
-}
 function getGraphData(){
   const items=load().map(migrate);
-  const nodes=items.map(i=>({id:i.id,title:i.title,category:i.category,summary:i.summary,content:(i.content||'').slice(0,80)}));
+  // Real item nodes (no content field - unused)
+  const realNodes=items.map(i=>({id:i.id,title:i.title,category:i.category,summary:i.summary}));
+  // Virtual hub nodes (one per category)
+  const cats=[...new Set(items.map(i=>i.category||'未分类'))];
+  const hubNodes=cats.map(cat=>({
+    id:'__hub__'+cat,title:getGalaxyName(cat)||cat,category:cat,
+    summary:'',isVirtualHub:true
+  }));
+  const nodes=[...hubNodes,...realNodes];
   const links=[];const linked=new Set();
 
-  if (items.length < 2) return { nodes, links };
+  if(!items.length)return{nodes,links};
 
-  // 按分类分组，找每个分类的 hub
-  const catGroups={};
-  items.forEach(item=>{const cat=item.category||'未分类';if(!catGroups[cat])catGroups[cat]=[];catGroups[cat].push(item)});
-  const catHubs={};
-  Object.entries(catGroups).forEach(([cat,group])=>{
-    if(group.length<2){catHubs[cat]=group[0].id;return}
-    const scored=group.map(item=>({item,score:hubScore(item,group)}));
-    scored.sort((a,b)=>b.score-a.score);
-    catHubs[cat]=scored[0].item.id;
+  // 1) Category-internal: link every real node to its virtual hub
+  items.forEach(item=>{
+    const hubId='__hub__'+(item.category||'未分类');
+    const key='h-'+item.id;
+    if(!linked.has(key)){
+      linked.add(key);
+      links.push({source:hubId,target:item.id,strength:.25,isHubLink:true});
+    }
   });
 
-  // 1) 每个分类内部：子节点连到 hub（目录结构）
-  Object.entries(catGroups).forEach(([cat,group])=>{
-    const hubId=catHubs[cat];
-    group.forEach(item=>{
-      if(item.id===hubId)return;
-      const key=Math.min(hubId,item.id)+'-'+Math.max(hubId,item.id);
-      if(!linked.has(key)){
-        linked.add(key);
-        const score=rel(getFP(item),getFP(items.find(i=>i.id===hubId)));
-        links.push({source:hubId,target:item.id,strength:Math.max(.2,Math.round(score*100)/100)});
-      }
-    });
+  // 1.5) Parent-child hierarchy links
+  items.forEach(item=>{
+    if(!item.parentId)return;
+    const key='p-'+item.parentId+'-'+item.id;
+    if(!linked.has(key)){
+      linked.add(key);
+      links.push({source:item.parentId,target:item.id,strength:.35,isHierarchy:true});
+    }
   });
 
-  // 2) 跨分类：每个子节点找其他分类最相似的 2 个节点
+  // 2) Cross-category similarity links
   const SIM_THRESHOLD=0.05;
   const MAX_CROSS=2;
   items.forEach(item=>{
@@ -1413,7 +1496,7 @@ function getGraphData(){
     }
   });
 
-  // 3) AI/用户指定关联
+  // 3) AI/user-specified relatedIds
   items.forEach(item=>{
     (item.relatedIds||[]).forEach(rid=>{
       const target=items.find(x=>x.id===rid);
@@ -1501,35 +1584,49 @@ const clock=new THREE.Clock();
 // 相机聚焦状态
 let _isFocused=false;
 
-// 计算聚类位置
+// 计算聚类位置（虚拟 Hub + 3层树形布局）
 function computePositions(items){
   if(!items.length)return{};
   const groups={};
   items.forEach(item=>{const cat=item.category||'未分类';if(!groups[cat])groups[cat]=[];groups[cat].push(item)});
   const cats=Object.keys(groups);const positions={};
-  // Find hubs
-  const hubIds={};
-  cats.forEach(cat=>{
-    const list=groups[cat];
-    if(list.length<2){hubIds[cat]=list[0]?.id;return}
-    const scored=list.map(item=>({item,score:hubScore(item,list)}));
-    scored.sort((a,b)=>b.score-a.score);
-    hubIds[cat]=scored[0].item.id;
-  });
+
   cats.forEach((cat,ci)=>{
     const list=groups[cat],count=list.length;
     const angle=(ci/cats.length)*Math.PI*2-Math.PI/2;
     const dist=4.0;const cx=Math.cos(angle)*dist;const cz=Math.sin(angle)*dist;const cy=Math.sin(angle*2)*.4;
-    const hubId=hubIds[cat];
-    // Hub at center of cluster
-    const hubItem=list.find(i=>i.id===hubId);
-    if(hubItem)positions[hubItem.id]={x:cx,y:cy,z:cz};
-    // Leaves in ring around hub
-    const leaves=list.filter(i=>i.id!==hubId);
-    leaves.forEach((item,ii)=>{
-      const ia=(ii/leaves.length)*Math.PI*2;
-      const spread=Math.min(2.0,.8+count*.15);
-      positions[item.id]={x:cx+Math.cos(ia)*spread,y:cy+Math.sin(ia*2)*spread*.4,z:cz+Math.sin(ia)*spread};
+    // Virtual hub at cluster center
+    const hubId='__hub__'+cat;
+    positions[hubId]={x:cx,y:cy,z:cz};
+
+    // L1: nodes with parentId==null orbit the hub
+    const l1=list.filter(i=>!i.parentId);
+    const l1Spread=Math.min(2.0,.8+count*.15);
+    l1.forEach((item,ii)=>{
+      const ia=(ii/Math.max(l1.length,1))*Math.PI*2;
+      const px=cx+Math.cos(ia)*l1Spread;
+      const pz=cz+Math.sin(ia)*l1Spread;
+      const py=cy+Math.sin(ia*2)*l1Spread*.4;
+      positions[item.id]={x:px,y:py,z:pz};
+
+      // L2: children of this L1 node
+      const l2=list.filter(i=>i.parentId===item.id);
+      const l2Spread=l1Spread*.5;
+      l2.forEach((child,jj)=>{
+        const ja=(jj/Math.max(l2.length,1))*Math.PI*2;
+        const cpx=px+Math.cos(ja)*l2Spread;
+        const cpz=pz+Math.sin(ja)*l2Spread;
+        const cpy=py+Math.sin(ja*2)*l2Spread*.4;
+        positions[child.id]={x:cpx,y:cpy,z:cpz};
+
+        // L3: children of L2
+        const l3=list.filter(i=>i.parentId===child.id);
+        const l3Spread=l2Spread*.5;
+        l3.forEach((grandKid,kk)=>{
+          const ka=(kk/Math.max(l3.length,1))*Math.PI*2;
+          positions[grandKid.id]={x:cpx+Math.cos(ka)*l3Spread,y:cpy+Math.sin(ka*2)*l3Spread*.4,z:cpz+Math.sin(ka)*l3Spread};
+        });
+      });
     });
   });
   return positions;
@@ -1573,7 +1670,8 @@ function createThickLink(p1,p2,color,radius){
   return group;
 }
 
-function createHoloSphere(pos, item, index, total, isHub, categoryName){
+function createHoloSphere(pos, item, index, total, isHub, categoryName, level){
+  const lvl=level||1;
   const baseHue = isHub ? 35 : hexToHue(getTheme('sphere_color','#00ccff'));
   const sat = isHub ? '85%' : '60%';
   const lit = isHub ? '62%' : '68%';
@@ -1584,7 +1682,7 @@ function createHoloSphere(pos, item, index, total, isHub, categoryName){
   const group=new THREE.Group();
   group.position.set(pos.x,pos.y,pos.z);
 
-  const base = isHub ? 0.55 : (0.2 + Math.random() * 0.08);
+  const base = isHub ? 0.55 : 0.22 * Math.pow(0.7, lvl-1);
   const seg = isMobile ? 12 : 24;
 
   // 内核 — 用 MeshStandardMaterial 替代昂贵的 MeshPhysicalMaterial
@@ -1609,15 +1707,16 @@ function createHoloSphere(pos, item, index, total, isHub, categoryName){
   const ringCount = isHub ? (isMobile?2:3) : (isMobile?0:1);
   for (let ri = 0; ri < ringCount; ri++) {
     const r = base * (1.6 + ri * 0.5);
-    const p = [];
     const pts = isMobile ? 32 : 64;
-    for (let a = 0; a <= pts; a++) {
-      const ang = a / pts * Math.PI * 2;
-      if (ri % 2 === 0) p.push(new THREE.Vector3(Math.cos(ang) * r, Math.sin(ang) * r, 0));
-      else p.push(new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r));
+    const geomKey = r.toFixed(3)+'_'+pts;
+    if(!window._ringGeomCache)window._ringGeomCache={};
+    if(!window._ringGeomCache[geomKey]){
+      const p=[];
+      for(let a=0;a<=pts;a++){const ang=a/pts*Math.PI*2;p.push(new THREE.Vector3(Math.cos(ang)*r,Math.sin(ang)*r,0))}
+      window._ringGeomCache[geomKey]=new THREE.BufferGeometry().setFromPoints(p);
     }
     group.add(new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(p),
+      window._ringGeomCache[geomKey],
       new THREE.LineBasicMaterial({color: isHub ? 0xffaa33 : 0x44ddff, transparent: true, opacity: isHub ? 0.12 : 0.07})
     ));
   }
@@ -1633,40 +1732,46 @@ function createHoloSphere(pos, item, index, total, isHub, categoryName){
 
 function updateLabelPositions(){
   const el=document.getElementById('scene-labels');
-  el.innerHTML='';
+
+  const labelSet=new Set();
+  if(!window._labelPool)window._labelPool={};
 
   // 分类标签
   const cats=getCategoryCenters();
   cats.forEach(cat=>{
-    const div=document.createElement('div');div.className='slabel cat-label';
-    div.textContent=cat.name;
-    el.appendChild(div);cat.div=div;
+    const key='cat_'+cat.name;labelSet.add(key);
+    let div=window._labelPool[key];
+    if(!div){div=document.createElement('div');div.className='slabel cat-label';el.appendChild(div);window._labelPool[key]=div}
+    div.textContent=cat.name;cat.div=div;
   });
   window._catLabels=cats;
 
-  // 节点标签（hub 金色大字，leaf 白色小字多行）
+  // 节点标签
   if(!window._nodeLabels)window._nodeLabels=[];
   window._nodeLabels.forEach(nl=>{
-    const div=document.createElement('div');
-    div.className='slabel node-label'+(nl.isHub?' hub-label':'');
-    div.textContent=nl.text;
-    
-    div.style.position='absolute';
-    div.style.transform='translate(-50%,-50%)';
-    div.style.color=nl.isHub?'#fff':'rgba(255,255,255,0.9)';
-    div.style.background='none';
-    div.style.border='none';
-    div.style.borderRadius='0';
-    div.style.padding=nl.isHub?'8px 22px':'5px 14px';
-    div.style.fontFamily='Noto Sans SC,Microsoft YaHei,sans-serif';
-    div.style.fontWeight=nl.isHub?'700':'400';
-    div.style.textAlign='center';
-    div.style.whiteSpace='pre-line';
-    div.style.lineHeight='1.3';
-	    div.style.textShadow='0 0 8px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.9)';
-	    div.style.pointerEvents='none';
-    el.appendChild(div);
-    nl.div=div;
+    const key='node_'+nl.nodeId;labelSet.add(key);
+    let div=window._labelPool[key];
+    if(!div){
+      div=document.createElement('div');div.className='slabel node-label'+(nl.isHub?' hub-label':'');
+      div.style.position='absolute';div.style.transform='translate(-50%,-50%)';
+      div.style.color=nl.isHub?'#fff':'rgba(255,255,255,0.9)';
+      div.style.background='none';div.style.border='none';div.style.borderRadius='0';
+      div.style.padding=nl.isHub?'8px 22px':'5px 14px';
+      div.style.fontFamily='Noto Sans SC,Microsoft YaHei,sans-serif';
+      div.style.fontWeight=nl.isHub?'700':'400';
+      div.style.textAlign='center';div.style.whiteSpace='pre-line';div.style.lineHeight='1.3';
+      div.style.textShadow='0 0 8px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.9)';
+      div.style.pointerEvents='none';
+      el.appendChild(div);window._labelPool[key]=div;
+    }
+    div.textContent=nl.text;nl.div=div;
+  });
+  // Remove stale labels
+  Object.keys(window._labelPool).forEach(key=>{
+    if(!labelSet.has(key)){
+      if(window._labelPool[key].parentNode)window._labelPool[key].parentNode.removeChild(window._labelPool[key]);
+      delete window._labelPool[key];
+    }
   });
 }
 
@@ -1692,13 +1797,14 @@ function populateGalaxySelector(){
   const sel=document.getElementById('galaxySelector');
   if(!sel)return;
   const items=load().map(migrate);
-  const cats=[...new Set(items.map(i=>i.category||'未分类'))].sort();
+  const itemCats=new Set(items.map(i=>i.category||'未分类'));
+  // Include galaxy cache entries even if empty
+  const allCats=[...new Set([...itemCats,...Object.keys(_galaxiesCache)])].sort();
   sel.innerHTML='<option value="__all__">⟐ 全部分类</option>';
-  cats.forEach(cat=>{
-    const g = _galaxiesCache[cat];
-    // 只有用户手动改过名才显示自定义名，AI 生成的科幻名忽略
-    const label = (g && g.name && g.aiGenerated === false) ? g.name : cat;
-    const opt=document.createElement('option');opt.value=cat;opt.textContent=label;
+  allCats.forEach(cat=>{
+    const g=_galaxiesCache[cat];
+    const label=(g&&g.name&&g.aiGenerated===false)?g.name:cat;
+    const opt=document.createElement('option');opt.value=cat;opt.textContent=label+(itemCats.has(cat)?'':' (空)');
     sel.appendChild(opt);
   });
 }
@@ -1747,41 +1853,37 @@ function rebuild(){
 
   _positions=computePositions(items);
 
-  // 按分类分组，确定每个分类的 hub
-  const catGroups={};
-  items.forEach(item=>{const cat=item.category||'未分类';if(!catGroups[cat])catGroups[cat]=[];catGroups[cat].push(item)});
-  const hubIds=new Set();
-  Object.entries(catGroups).forEach(([cat,group])=>{
-    if(group.length<2){hubIds.add(group[0].id);return}
-    const scored=group.map(item=>({item,score:hubScore(item,group)}));
-    scored.sort((a,b)=>b.score-a.score);
-    hubIds.add(scored[0].item.id);
-  });
+  // Compute depth level for each node (for sizing)
+  function getLevel(nodeId){
+    const item=items.find(x=>x.id===nodeId);
+    if(!item||!item.parentId)return 1;
+    return 1+getLevel(item.parentId);
+  }
 
-  // 渲染节点（hub 用金色大球，普通子节点用小蓝球）
+  // 渲染节点（虚拟 Hub 用金色大球，子节点按层级大小）
   _nodeLabels=[];
   data.nodes.forEach((node,i)=>{
-    const item=items.find(x=>x.id===node.id);
     const pos=_positions[node.id]||{x:(Math.random()-.5)*3,y:(Math.random()-.5)*2,z:(Math.random()-.5)*3};
-    const isHub=hubIds.has(node.id);
-    const catName=item?.category||'未分类';
-    const h=createHoloSphere(pos,node,i,data.nodes.length,isHub,catName);
+    const isHub=node.isVirtualHub===true;
+    const catName=node.category||'未分类';
+    const level=isHub?0:Math.min(3,getLevel(node.id));
+    const h=createHoloSphere(pos,node,i,data.nodes.length,isHub,catName,level);
     nodeGroup.add(h.group);
 
-    // 标签数据收集（由 CSS overlay 渲染，保证文字完美居中）
+    // 标签数据收集
     let labelText;
     if(isHub){
-      labelText=catName.length>5?catName.slice(0,5)+'…':catName;
+      const gname=getGalaxyName(catName)||catName;
+      labelText=gname.length>5?gname.slice(0,5)+'…':gname;
     } else {
       const t=(node.title||'').slice(0,18);
       const chunks=[];
       for(let ci=0;ci<t.length;ci+=6)chunks.push(t.slice(ci,ci+6));
       labelText=chunks.join('\n');
     }
-    _nodeLabels.push({pos:new THREE.Vector3(pos.x,pos.y,pos.z), text:labelText, isHub, category:catName, nodeId:node.id, baseSize:h.baseSize});
-    allMeshes.push({group:h.group, nodeId:node.id, data:h, isHub, category:catName});
-
-    });
+    _nodeLabels.push({pos:new THREE.Vector3(pos.x,pos.y,pos.z), text:labelText, isHub, category:catName, nodeId:node.id, baseSize:h.baseSize, level});
+    allMeshes.push({group:h.group, nodeId:node.id, data:h, isHub, category:catName, isVirtualHub:isHub});
+  });
 
     // 连线
     if(data.links.length){
@@ -1841,9 +1943,11 @@ function rebuild(){
   }
 
   renderer.domElement.onclick=(ev)=>{
-    if (ev.button !== 0) return; // 只响应左键
+    if (ev.button !== 0) return;
     const m = _hitNode(ev);
-    if (m) showD(m.nodeId);
+    if (!m) return;
+    if (m.isVirtualHub) showCategoryOverview(m.category);
+    else showD(m.nodeId);
   };
 
   // 右键菜单
@@ -1854,10 +1958,13 @@ function rebuild(){
     const m = _hitNode(ev);
     if (!m) { hideCtx(); return; }
     window._ctxNodeId = m.nodeId;
+    window._ctxIsHub = m.isVirtualHub||false;
+    // Show/hide context menu items based on hub status
+    const addChildEl=document.querySelector('#ctxMenu .ctx-item:nth-child(2)');
+    if(addChildEl)addChildEl.style.display=m.isVirtualHub?'none':'';
     const menu = document.getElementById('ctxMenu');
     menu.style.left = ev.clientX + 'px';
     menu.style.top = ev.clientY + 'px';
-    // 防止溢出屏幕
     const mw = menu.offsetWidth || 160, mh = menu.offsetHeight || 130;
     if (ev.clientX + mw > innerWidth) menu.style.left = (ev.clientX - mw) + 'px';
     if (ev.clientY + mh > innerHeight) menu.style.top = (ev.clientY - mh) + 'px';
