@@ -428,12 +428,12 @@ body {
 
 .mm-node {
   position:absolute;
-  padding:6px 18px;
+  padding:8px 20px;
   border-radius:8px;
   cursor:pointer;
-  background:rgba(255,255,255,.03);
-  border:1px solid rgba(255,255,255,.07);
-  color:rgba(255,255,255,.73);
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.08);
+  color:rgba(255,255,255,.8);
   font-size:13px;
   font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;
   white-space:nowrap;
@@ -441,14 +441,15 @@ body {
   transition:all .25s ease;
   user-select:none;
   transform:translate(-50%,-50%);
-  backdrop-filter:blur(4px);
   letter-spacing:.3px;
+  line-height:1.4;
+  box-shadow:0 2px 12px rgba(0,0,0,.3);
 }
 .mm-node:hover {
-  background:rgba(255,255,255,.1);
-  border-color:var(--accent-border-focus);
+  background:rgba(255,255,255,.09);
+  border-color:var(--accent-text);
   color:#fff;
-  box-shadow:0 0 20px var(--accent-dim);
+  box-shadow:0 2px 20px var(--accent-dim);
 }
 .mm-node.hub {
   background:rgba(255,200,50,.04);
@@ -459,13 +460,13 @@ body {
   letter-spacing:2px;
   font-size:14px;
   text-transform:uppercase;
-  padding:8px 22px;
-  box-shadow:0 0 15px rgba(255,200,50,.04);
+  padding:8px 24px;
+  box-shadow:0 2px 16px rgba(255,200,50,.04);
 }
 .mm-node.hub:hover {
   background:rgba(255,200,50,.1);
   border-color:rgba(255,200,50,.25);
-  box-shadow:0 0 30px rgba(255,200,50,.08);
+  box-shadow:0 2px 24px rgba(255,200,50,.08);
 }
 
 /* 星空 Canvas */
@@ -1497,7 +1498,7 @@ function getGraphData(){
 //  2D MIND MAP（替换 Three.js 3D 场景）
 // ============================================================
 
-// ---- Starfield Canvas ----
+// ---- Starfield Canvas (Rolls-Royce Starlight Headliner) ----
 (function() {
   const c = document.createElement('canvas');
   c.id = 'starfield';
@@ -1512,29 +1513,62 @@ function getGraphData(){
     c.width = W * dpr; c.height = H * dpr;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
+
   function initStars() {
-    const n = mobile ? 800 : 2000;
+    const n = mobile ? 1200 : 3200;
     stars = [];
+    // Random distribution with subtle clustering
     for (let i = 0; i < n; i++) {
+      // Some clustering: use simplex-like grouping by biasing positions
+      const cluster = Math.random() < 0.15;
+      let x, y;
+      if (cluster) {
+        // Create small constellations
+        const cx = Math.random() * W;
+        const cy = Math.random() * H;
+        x = cx + (Math.random() - 0.5) * 60;
+        y = cy + (Math.random() - 0.5) * 60;
+      } else {
+        x = Math.random() * W;
+        y = Math.random() * H;
+      }
+      const brightness = Math.random();
       stars.push({
-        x: Math.random() * W, y: Math.random() * H,
-        r: Math.random() * 1.5 + 0.3,
-        a: Math.random() * 0.8 + 0.2,
-        s: Math.random() * 0.02 + 0.003,
-        p: Math.random() * Math.PI * 2
+        x: Math.max(0, Math.min(W, x)),
+        y: Math.max(0, Math.min(H, y)),
+        r: brightness > 0.97 ? 1.2 + Math.random() * 0.8 : 0.3 + Math.random() * 0.7,
+        a: 0.3 + brightness * 0.7,
+        s: 0.002 + Math.random() * 0.008,
+        p: Math.random() * Math.PI * 2,
+        warm: Math.random() < 0.3 ? 0.92 + Math.random() * 0.08 : 1.0
       });
     }
   }
+
   window._sfDraw = function(t) {
     ctx.clearRect(0, 0, W, H);
     for (const st of stars) {
-      const f = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * st.s + st.p));
+      // Extremely subtle breathing — barely perceptible
+      const breathe = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(t * st.s + st.p));
+      const alpha = st.a * breathe;
+      const w = st.warm;
+      const r = Math.round(255 * w);
+      const g = Math.round(245 + (255 - 245) * w);
+      const b = Math.round(235 + (255 - 235) * w);
       ctx.beginPath();
       ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
-      ctx.fillStyle = `rgba(200,220,255,${st.a * f})`;
+      ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
       ctx.fill();
+      // Subtle glow for brightest stars
+      if (st.r > 1.4) {
+        ctx.beginPath();
+        ctx.arc(st.x, st.y, st.r * 3, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(${r},${g},${b},${alpha * 0.06})`;
+        ctx.fill();
+      }
     }
   };
+
   resize(); initStars();
   let rzTimer;
   window.addEventListener('resize', () => {
@@ -1548,44 +1582,39 @@ let _positions = {};
 let _panX = 0, _panY = 0;
 let _isDragging = false, _dragSX, _dragSY, _dragPX, _dragPY;
 
-// ---- 2D Tree Layout (XMind 风格水平树) ----
+// ---- 2D Tree Layout (XMind 风格) ----
 function computePositions(items) {
   const pos = {};
   if (!items.length) return pos;
-  const V_GAP = 54, H_GAP = 190, CAT_GAP = 36;
-  const depth = {};
-  function getD(id, visited) {
-    if (depth[id] !== undefined) return depth[id];
-    visited = visited || new Set();
-    if (visited.has(id)) { depth[id] = 1; return 1; }
-    const item = items.find(i => i.id === id);
-    if (!item || !item.parentId) { depth[id] = 0; return 0; }
-    visited.add(id);
-    depth[id] = 1 + getD(item.parentId, visited);
-    return depth[id];
-  }
-  items.forEach(i => getD(i.id));
+  const V_GAP = 48, H_GAP = 170, CAT_GAP = 32;
+
   const cats = [...new Set(items.map(i => i.category || '未分类'))].sort();
   let y = 0;
+
   cats.forEach(cat => {
     const list = items.filter(i => (i.category || '未分类') === cat);
     pos['__hub__' + cat] = { x: 0, y: y };
-    y += V_GAP * 0.7;
+
     const roots = list.filter(i => !i.parentId);
+    let subY = y;
     roots.forEach(item => {
-      pos[item.id] = { x: (depth[item.id] + 1) * H_GAP, y: y };
-      y += V_GAP;
+      subY += V_GAP * 0.5;
+      pos[item.id] = { x: H_GAP, y: subY };
+      subY += V_GAP * 0.5;
       (function pk(pid, d) {
         if (d > 3) return;
-        list.filter(i => i.parentId === pid).forEach(k => {
-          pos[k.id] = { x: (d + 1) * H_GAP, y: y };
-          y += V_GAP;
+        const kids = list.filter(i => i.parentId === pid);
+        kids.forEach(k => {
+          subY += V_GAP * 0.5;
+          pos[k.id] = { x: H_GAP * (d + 1), y: subY };
+          subY += V_GAP * 0.5;
           pk(k.id, d + 1);
         });
       })(item.id, 1);
     });
-    y += CAT_GAP;
+    y = Math.max(subY, y + V_GAP + CAT_GAP);
   });
+
   const ys = Object.values(pos).map(p => p.y);
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   Object.values(pos).forEach(p => p.y -= cy);
@@ -1611,7 +1640,7 @@ function populateGalaxySelector(){
   });
 }
 
-// ---- Mind Map Render ----
+// ---- Mind Map Render (XMind 风格) ----
 function rebuild() {
   const mm = document.getElementById('mindmap');
   if (!mm) return;
@@ -1621,31 +1650,54 @@ function rebuild() {
   linesEl.innerHTML = ''; nodesEl.innerHTML = '';
 
   const items = load().map(migrate);
-  const data = getGraphData();
-  if (!data.nodes.length) { document.getElementById('hudStatus').textContent = 'AWAITING INPUT'; upStats(); return; }
+  if (!items.length) { document.getElementById('hudStatus').textContent = 'AWAITING INPUT'; upStats(); return; }
 
   _positions = computePositions(items);
   const ox = Math.max(innerWidth / 3, 200);
   const oy = innerHeight / 2;
 
-  data.nodes.forEach(node => {
-    const p = _positions[node.id];
+  // Build a lookup for quick parent/child checks
+  const itemMap = {};
+  items.forEach(i => { itemMap[i.id] = i; });
+
+  // ---- Render nodes ----
+  // Group by category for color assignment
+  const catColors = ['#ffcc66', '#66eeff', '#66ff99', '#ff88aa', '#cc99ff', '#ff9955'];
+  const cats = [...new Set(items.map(i => i.category || '未分类'))].sort();
+  const catColorMap = {};
+  cats.forEach((cat, ci) => { catColorMap[cat] = catColors[ci % catColors.length]; });
+
+  Object.keys(_positions).forEach(key => {
+    const p = _positions[key];
     if (!p) return;
-    const isHub = node.isVirtualHub === true;
+    const isHub = key.startsWith('__hub__');
+    const cat = isHub ? key.replace('__hub__', '') : (itemMap[key] ? itemMap[key].category || '未分类' : '');
+    const color = catColorMap[cat] || '#ffffff';
+
     const el = document.createElement('div');
     el.className = 'mm-node' + (isHub ? ' hub' : '');
     el.style.left = (p.x + ox) + 'px';
     el.style.top = (p.y + oy) + 'px';
-    el.textContent = isHub ? (node.title || '未分类') : (node.title || '').slice(0, 28);
-    if (!isHub && node.summary) el.title = node.summary;
+
+    if (isHub) {
+      el.textContent = cat;
+      el.style.borderColor = color + '33';
+      el.style.color = color;
+      el.style.boxShadow = `0 0 20px ${color}08`;
+    } else {
+      const item = itemMap[key];
+      if (!item) return;
+      el.textContent = (item.title || '').slice(0, 30);
+      if (item.summary) el.title = item.summary;
+    }
 
     el.addEventListener('click', () => {
-      if (isHub) showCategoryOverview(node.category);
-      else showD(typeof node.id === 'string' && node.id.startsWith('__hub__') ? node.id : Number(node.id));
+      if (isHub) showCategoryOverview(cat);
+      else showD(Number(key));
     });
     el.addEventListener('contextmenu', (ev) => {
       ev.preventDefault();
-      window._ctxNodeId = typeof node.id === 'string' && node.id.startsWith('__hub__') ? node.id : Number(node.id);
+      window._ctxNodeId = isHub ? key : Number(key);
       window._ctxIsHub = isHub;
       const addEl = document.querySelector('#ctxMenu .ctx-item[data-action="addChild"]');
       if (addEl) addEl.style.display = isHub ? 'none' : '';
@@ -1656,19 +1708,37 @@ function rebuild() {
     nodesEl.appendChild(el);
   });
 
-  data.links.forEach(link => {
-    const sp = _positions[link.source], tp = _positions[link.target];
-    if (!sp || !tp) return;
-    const isHubLink = String(link.source).startsWith('__hub__') || String(link.target).startsWith('__hub__');
+  // ---- Render tree connections only (XMind 风格连线) ----
+  // Only draw: hub→root-item and parent→child. Skip similarity/relatedId links.
+  items.forEach(item => {
+    const tp = _positions[item.id];
+    if (!tp) return;
+
+    let sourcePos = null;
+    let isHubLink = false;
+
+    if (item.parentId) {
+      // Child → parent
+      sourcePos = _positions[item.parentId];
+      isHubLink = false;
+    } else {
+      // Root item → category hub
+      const hubId = '__hub__' + (item.category || '未分类');
+      sourcePos = _positions[hubId];
+      isHubLink = true;
+    }
+    if (!sourcePos) return;
+
+    const color = isHubLink ? (catColorMap[item.category || '未分类'] || '#ffffff') : 'rgba(255,255,255,0.15)';
     const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    const mx = (sp.x + tp.x) / 2;
-    path.setAttribute('d', `M${sp.x+ox},${sp.y+oy} Q${mx+ox},${sp.y+oy} ${mx+ox},${(sp.y+tp.y)/2+oy} Q${mx+ox},${tp.y+oy} ${tp.x+ox},${tp.y+oy}`);
-    path.style.stroke = isHubLink ? 'rgba(255,200,80,0.15)' : 'rgba(255,255,255,0.07)';
-    path.style.strokeWidth = isHubLink ? '2' : '1.5';
+    const mx = (sourcePos.x + tp.x) / 2;
+    path.setAttribute('d', `M${sourcePos.x+ox},${sourcePos.y+oy} C${mx+ox},${sourcePos.y+oy} ${mx+ox},${tp.y+oy} ${tp.x+ox},${tp.y+oy}`);
+    path.style.stroke = isHubLink ? color + '44' : 'rgba(255,255,255,0.1)';
+    path.style.strokeWidth = isHubLink ? '1.5' : '1.5';
     linesEl.appendChild(path);
   });
 
-  document.getElementById('hudStatus').textContent = `SYSTEM ACTIVE · ${data.nodes.length} NODES`;
+  document.getElementById('hudStatus').textContent = `SYSTEM ACTIVE · ${items.length} NODES`;
   upStats(); populateGalaxySelector();
 }
 
