@@ -26,8 +26,7 @@ body {
   background:#000; color:#fff; overflow:hidden;
   height:100vh; width:100vw; user-select:none;
 }
-#scene-container { position:fixed; inset:0; z-index:0; }
-#scene-container canvas { display:block; }
+/* scene-container removed — replaced by #mindmap */
 
 /* ===== 加载 ===== */
 #loading {
@@ -404,29 +403,76 @@ body {
 #emptyHint .ei2 { font-size:44px; color:rgba(255,255,255,.06); margin-bottom:12px; }
 #emptyHint p { font-size:12px; letter-spacing:3px; color:rgba(255,255,255,.12); line-height:2; }
 
-/* ===== 分类标签 ===== */
-#scene-labels {
-  position:fixed; inset:0; z-index:1; pointer-events:none;
-  overflow:hidden; contain:layout style paint;
+/* ===== 思维导图 ===== */
+#mindmap {
+  position:fixed; inset:0; z-index:1;
+  overflow:hidden; cursor:grab;
+  transform-origin:0 0;
 }
-.slabel {
-  position:absolute; font-family:'Orbitron',monospace;
-  font-size:11px; letter-spacing:2px; color:rgba(255,255,255,.4);
-  transform:translate(-50%,-50%); transition:opacity .8s;
-  text-shadow:0 0 20px var(--accent-border);
-  pointer-events:none; white-space:nowrap;
-  will-change:transform,opacity;
+#mindmap:active { cursor:grabbing; }
+#mindmap.dragging { cursor:grabbing; }
+
+#mm-lines {
+  position:absolute; top:0; left:0;
+  width:100%; height:100%;
+  pointer-events:none;
 }
-.node-label {
+#mm-lines path {
+  fill:none;
+  stroke-linecap:round;
+}
+
+#mm-nodes {
+  position:absolute; top:0; left:0;
+}
+
+.mm-node {
+  position:absolute;
+  padding:6px 18px;
+  border-radius:8px;
+  cursor:pointer;
+  background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.07);
+  color:rgba(255,255,255,.73);
+  font-size:13px;
   font-family:'Noto Sans SC','Microsoft YaHei',sans-serif;
-  letter-spacing:0;
+  white-space:nowrap;
+  pointer-events:auto;
+  transition:all .25s ease;
+  user-select:none;
   transform:translate(-50%,-50%);
-  white-space:pre-line; text-align:center; line-height:1.3;
-  transition:none;
+  backdrop-filter:blur(4px);
+  letter-spacing:.3px;
 }
-.hub-label {
+.mm-node:hover {
+  background:rgba(255,255,255,.1);
+  border-color:var(--accent-border-focus);
+  color:#fff;
+  box-shadow:0 0 20px var(--accent-dim);
+}
+.mm-node.hub {
+  background:rgba(255,200,50,.04);
+  border-color:rgba(255,200,50,.12);
+  color:#ffcc66;
   font-weight:700;
-  transition:none;
+  font-family:'Courier New',monospace;
+  letter-spacing:2px;
+  font-size:14px;
+  text-transform:uppercase;
+  padding:8px 22px;
+  box-shadow:0 0 15px rgba(255,200,50,.04);
+}
+.mm-node.hub:hover {
+  background:rgba(255,200,50,.1);
+  border-color:rgba(255,200,50,.25);
+  box-shadow:0 0 30px rgba(255,200,50,.08);
+}
+
+/* 星空 Canvas */
+#starfield {
+  position:fixed; inset:0; z-index:0;
+  pointer-events:none;
+  background:#000;
 }
 
 /* ===== AI 分析指示器 ===== */
@@ -492,8 +538,7 @@ body {
 
 <div id="loading"><div class="jarv-ring"></div><h1>INITIALIZING</h1></div>
 <script>setTimeout(function(){var l=document.getElementById('loading');if(l&&!l.classList.contains('hidden'))l.classList.add('hidden')},3000);</script>
-<div id="scene-container"></div>
-<div id="scene-labels"></div>
+<div id="mindmap"><svg id="mm-lines"></svg><div id="mm-nodes"></div></div>
 <div id="aiIndicator"><div class="spin"></div><p>AI 分析中...</p></div>
 
 <div id="emptyHint" class="hidden">
@@ -616,8 +661,6 @@ body {
 </div>
 <div class="modal" id="modal"><button class="mc2" onclick="closeM()">✕</button><h2 id="modalT"></h2><div class="mc" id="modalC"><div class="msum" id="modalSum"></div><div id="modalImg"></div><div id="modalContent"></div></div></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 // ===== Supabase 数据层（自动回退 localStorage）=====
 const DBK='knowledge_nebula_data',AKK='knowledge_nebula_apikey',THK='knowledge_nebula_theme',GLK='knowledge_nebula_galaxies';
@@ -1451,286 +1494,111 @@ function getGraphData(){
 }
 
 // ============================================================
-//  THREE.JS
+//  2D MIND MAP（替换 Three.js 3D 场景）
 // ============================================================
-const container=document.getElementById('scene-container');
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x000000);
 
-const camera=new THREE.PerspectiveCamera(45,innerWidth/innerHeight,.1,1e3);
-camera.position.set(0,2,6);
+// ---- Starfield Canvas ----
+(function() {
+  const c = document.createElement('canvas');
+  c.id = 'starfield';
+  document.body.prepend(c);
+  const ctx = c.getContext('2d');
+  const mobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) || ('ontouchstart' in window && innerWidth < 768);
+  let W, H, stars = [];
 
-const isMobile=/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)||('ontouchstart' in window&&innerWidth<768);
-const renderer=new THREE.WebGLRenderer({antialias:!isMobile,alpha:false,powerPreference:isMobile?'low-power':'high-performance'});
-renderer.setSize(innerWidth,innerHeight);
-renderer.setPixelRatio(Math.min(devicePixelRatio,isMobile?1.5:2));
-container.appendChild(renderer.domElement);
-
-const controls=new THREE.OrbitControls(camera,renderer.domElement);
-controls.enableDamping=true;controls.dampingFactor=isMobile?0.12:0.08;
-controls.autoRotate=true;controls.autoRotateSpeed=isMobile?0.25:0.4;
-controls.minDistance=2;controls.maxDistance=isMobile?18:25;
-controls.screenSpacePanning=true;
-controls.panSpeed=isMobile?1.0:1.5;
-controls.mouseButtons={LEFT:THREE.MOUSE.ROTATE,MIDDLE:THREE.MOUSE.PAN,RIGHT:THREE.MOUSE.PAN};
-renderer.domElement.addEventListener('contextmenu',e=>e.preventDefault());
-// 移动端触摸手势：一指旋转、双指平移/缩放（OrbitControls 内置）
-
-const amb=new THREE.AmbientLight(0x224466);scene.add(amb);
-const dl=new THREE.DirectionalLight(0x4488ff,.5);dl.position.set(1,2,1);scene.add(dl);
-
-// ===== 星空背景 =====
-const starField=new THREE.Group();scene.add(starField);
-const STAR_COUNT=isMobile?1500:4000;
-const sg=new THREE.BufferGeometry();const sp=new Float32Array(STAR_COUNT*3);const sc2=new Float32Array(STAR_COUNT*3);
-for(let i=0;i<STAR_COUNT;i++){
-  const r=8+Math.random()*100,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
-  sp[i*3]=r*Math.sin(ph)*Math.cos(th);sp[i*3+1]=r*Math.sin(ph)*Math.sin(th);sp[i*3+2]=r*Math.cos(ph);
-  const t=Math.random();
-  if(t>.97){sc2[i*3]=.5;sc2[i*3+1]=.7;sc2[i*3+2]=1}
-  else if(t>.93){sc2[i*3]=1;sc2[i*3+1]=.85;sc2[i*3+2]=.6}
-  else if(t>.88){sc2[i*3]=1;sc2[i*3+1]=.5;sc2[i*3+2]=.3}
-  else{const br=.5+Math.random()*.5;sc2[i*3]=br;sc2[i*3+1]=br;sc2[i*3+2]=br+.08}
-}
-sg.setAttribute('position',new THREE.BufferAttribute(sp,3));
-sg.setAttribute('color',new THREE.BufferAttribute(sc2,3));
-const sm=new THREE.PointsMaterial({size:isMobile?0.06:0.08,vertexColors:true,transparent:true,opacity:.9,blending:THREE.NormalBlending,depthWrite:false,sizeAttenuation:true});
-const stars=new THREE.Points(sg,sm);starField.add(stars);
-
-// 大亮星（减少数量）
-const BRIGHT_COUNT=isMobile?4:8;
-for(let i=0;i<BRIGHT_COUNT;i++){
-  const r=10+Math.random()*60,th=Math.random()*Math.PI*2,ph=Math.acos(2*Math.random()-1);
-  const c=document.createElement('canvas');c.width=16;c.height=16;
-  const ctx=c.getContext('2d');
-  const g=ctx.createRadialGradient(8,8,0,8,8,8);
-  const col=i%3===0?'rgba(200,230,255,1)':i%3===1?'rgba(255,240,200,1)':'rgba(255,200,200,1)';
-  g.addColorStop(0,col);g.addColorStop(.2,col.replace(',1)',',.5)'));g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle=g;ctx.fillRect(0,0,16,16);
-  const tex=new THREE.CanvasTexture(c);
-  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,blending:THREE.NormalBlending,depthWrite:false,transparent:true}));
-  sprite.position.set(r*Math.sin(ph)*Math.cos(th),r*Math.sin(ph)*Math.sin(th),r*Math.cos(ph));
-  sprite.scale.set(.3+Math.random()*.8,.3+Math.random()*.8,1);
-  starField.add(sprite);
-}
-
-// ===== 节点系统 =====
-const nodeGroup=new THREE.Group();scene.add(nodeGroup);
-let allMeshes=[];let linkLines=null;let linkGroup=null;let linkGlowLines=null;
-const clock=new THREE.Clock();
-
-// 相机聚焦状态
-let _isFocused=false;
-
-// 计算聚类位置（虚拟 Hub + 3层树形布局）
-function computePositions(items){
-  if(!items.length)return{};
-  const groups={};
-  items.forEach(item=>{const cat=item.category||'未分类';if(!groups[cat])groups[cat]=[];groups[cat].push(item)});
-  const cats=Object.keys(groups);const positions={};
-
-  cats.forEach((cat,ci)=>{
-    const list=groups[cat],count=list.length;
-    const angle=(ci/cats.length)*Math.PI*2-Math.PI/2;
-    const dist=4.0;const cx=Math.cos(angle)*dist;const cz=Math.sin(angle)*dist;const cy=Math.sin(angle*2)*.4;
-    // Virtual hub at cluster center
-    const hubId='__hub__'+cat;
-    positions[hubId]={x:cx,y:cy,z:cz};
-
-    // L1: nodes with parentId==null orbit the hub
-    const l1=list.filter(i=>!i.parentId);
-    const l1Spread=Math.min(2.0,.8+count*.15);
-    l1.forEach((item,ii)=>{
-      const ia=(ii/Math.max(l1.length,1))*Math.PI*2;
-      const px=cx+Math.cos(ia)*l1Spread;
-      const pz=cz+Math.sin(ia)*l1Spread;
-      const py=cy+Math.sin(ia*2)*l1Spread*.4;
-      positions[item.id]={x:px,y:py,z:pz};
-
-      // L2: children of this L1 node
-      const l2=list.filter(i=>i.parentId===item.id);
-      const l2Spread=l1Spread*.5;
-      l2.forEach((child,jj)=>{
-        const ja=(jj/Math.max(l2.length,1))*Math.PI*2;
-        const cpx=px+Math.cos(ja)*l2Spread;
-        const cpz=pz+Math.sin(ja)*l2Spread;
-        const cpy=py+Math.sin(ja*2)*l2Spread*.4;
-        positions[child.id]={x:cpx,y:cpy,z:cpz};
-
-        // L3: children of L2
-        const l3=list.filter(i=>i.parentId===child.id);
-        const l3Spread=l2Spread*.5;
-        l3.forEach((grandKid,kk)=>{
-          const ka=(kk/Math.max(l3.length,1))*Math.PI*2;
-          positions[grandKid.id]={x:cpx+Math.cos(ka)*l3Spread,y:cpy+Math.sin(ka*2)*l3Spread*.4,z:cpz+Math.sin(ka)*l3Spread};
-        });
+  function resize() {
+    const dpr = Math.min(devicePixelRatio, 2);
+    W = innerWidth; H = innerHeight;
+    c.width = W * dpr; c.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  function initStars() {
+    const n = mobile ? 800 : 2000;
+    stars = [];
+    for (let i = 0; i < n; i++) {
+      stars.push({
+        x: Math.random() * W, y: Math.random() * H,
+        r: Math.random() * 1.5 + 0.3,
+        a: Math.random() * 0.8 + 0.2,
+        s: Math.random() * 0.02 + 0.003,
+        p: Math.random() * Math.PI * 2
       });
+    }
+  }
+  window._sfDraw = function(t) {
+    ctx.clearRect(0, 0, W, H);
+    for (const st of stars) {
+      const f = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * st.s + st.p));
+      ctx.beginPath();
+      ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(200,220,255,${st.a * f})`;
+      ctx.fill();
+    }
+  };
+  resize(); initStars();
+  let rzTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(rzTimer);
+    rzTimer = setTimeout(() => { resize(); initStars(); }, 200);
+  });
+})();
+
+// ---- Mind Map State ----
+let _positions = {};
+let _panX = 0, _panY = 0;
+let _isDragging = false, _dragSX, _dragSY, _dragPX, _dragPY;
+
+// ---- 2D Tree Layout (XMind 风格水平树) ----
+function computePositions(items) {
+  const pos = {};
+  if (!items.length) return pos;
+  const V_GAP = 54, H_GAP = 190, CAT_GAP = 36;
+  const depth = {};
+  function getD(id, visited) {
+    if (depth[id] !== undefined) return depth[id];
+    visited = visited || new Set();
+    if (visited.has(id)) { depth[id] = 1; return 1; }
+    const item = items.find(i => i.id === id);
+    if (!item || !item.parentId) { depth[id] = 0; return 0; }
+    visited.add(id);
+    depth[id] = 1 + getD(item.parentId, visited);
+    return depth[id];
+  }
+  items.forEach(i => getD(i.id));
+  const cats = [...new Set(items.map(i => i.category || '未分类'))].sort();
+  let y = 0;
+  cats.forEach(cat => {
+    const list = items.filter(i => (i.category || '未分类') === cat);
+    pos['__hub__' + cat] = { x: 0, y: y };
+    y += V_GAP * 0.7;
+    const roots = list.filter(i => !i.parentId);
+    roots.forEach(item => {
+      pos[item.id] = { x: (depth[item.id] + 1) * H_GAP, y: y };
+      y += V_GAP;
+      (function pk(pid, d) {
+        if (d > 3) return;
+        list.filter(i => i.parentId === pid).forEach(k => {
+          pos[k.id] = { x: (d + 1) * H_GAP, y: y };
+          y += V_GAP;
+          pk(k.id, d + 1);
+        });
+      })(item.id, 1);
     });
+    y += CAT_GAP;
   });
-  return positions;
+  const ys = Object.values(pos).map(p => p.y);
+  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  Object.values(pos).forEach(p => p.y -= cy);
+  return pos;
 }
 
-// ===== 创建全息连线（JARVIS 风格）=====
-function createThickLink(p1,p2,color,radius){
-  const start=new THREE.Vector3(p1.x,p1.y,p1.z);
-  const end=new THREE.Vector3(p2.x,p2.y,p2.z);
-  const dir=new THREE.Vector3().copy(end).sub(start);
-  const len=dir.length();if(len<.001)return null;
-  const mid=new THREE.Vector3().copy(start).add(end).multiplyScalar(.5);
-  const norm=dir.clone().normalize();
-  const up=new THREE.Vector3(0,1,0);
-  const group=new THREE.Group();
-  group.position.copy(mid);
-
-  const cylSeg = isMobile ? 4 : 5;
-  const coreR=Math.max(.002,radius*.6);
-  const core=new THREE.Mesh(
-    new THREE.CylinderGeometry(coreR*.7,coreR,len,cylSeg,1),
-    new THREE.MeshBasicMaterial({color,transparent:true,opacity:.35,blending:THREE.NormalBlending,depthWrite:false})
-  );
-  core.quaternion.setFromUnitVectors(up,norm);
-  core.userData.isGlow=false;
-  group.add(core);
-
-  // Glow aura（移动端跳过辉光外层）
-  if(!isMobile){
-    const glowR=Math.max(.006,radius*2.2);
-    const glow=new THREE.Mesh(
-      new THREE.CylinderGeometry(glowR*.7,glowR,len,cylSeg,1),
-      new THREE.MeshBasicMaterial({color,transparent:true,opacity:.07,blending:THREE.NormalBlending,depthWrite:false})
-    );
-    glow.quaternion.setFromUnitVectors(up,norm);
-    glow.userData.isGlow=true;
-    group.add(glow);
-  }
-
-  group.userData={start:p1,end:p2,length:len};
-  return group;
+function getCategoryCenters() {
+  return Object.keys(_positions).filter(k => k.startsWith('__hub__')).map(k => ({ name: k.replace('__hub__', ''), x: _positions[k].x, y: _positions[k].y }));
 }
 
-function createHoloSphere(pos, item, index, total, isHub, categoryName, level){
-  const lvl=level||1;
-  const baseHue = isHub ? 35 : hexToHue(getTheme('sphere_color','#00ccff'));
-  const sat = isHub ? '85%' : '60%';
-  const lit = isHub ? '62%' : '68%';
-  const hue = isHub ? baseHue : baseHue - 15 + Math.random() * 30;
-  const color=new THREE.Color(`hsl(${hue},${sat},${lit})`);
-  const glowColor = isHub ? new THREE.Color(`hsl(${hue},90%,55%)`) : new THREE.Color(`hsl(${hue},65%,52%)`);
+function updateLabelPositions() { populateGalaxySelector(); }
 
-  const group=new THREE.Group();
-  group.position.set(pos.x,pos.y,pos.z);
-
-  const base = isHub ? 0.55 : 0.22 * Math.pow(0.7, lvl-1);
-  const seg = isMobile ? 12 : 24;
-
-  // 内核 — 用 MeshStandardMaterial 替代昂贵的 MeshPhysicalMaterial
-  const innerMat=new THREE.MeshStandardMaterial({color,transparent:true,opacity:isHub?0.25:0.18,metalness:0,roughness:.5,emissive:glowColor,emissiveIntensity:isHub?0.12:0.06});
-  group.add(new THREE.Mesh(new THREE.SphereGeometry(base,seg,seg/2),innerMat));
-
-  // 线框（移动端减少段数）
-  const wireSeg = isMobile ? 8 : 10;
-  const wireMat=new THREE.MeshBasicMaterial({color,wireframe:true,transparent:true,opacity:isHub?0.15:0.1});
-  const wire=new THREE.Mesh(new THREE.SphereGeometry(base*1.08,wireSeg,wireSeg),wireMat);
-  group.add(wire);
-
-  // Edges — 移动端跳过
-  if(!isMobile){
-    const edges=new THREE.EdgesGeometry(new THREE.SphereGeometry(base*1.15,8,8));
-    group.add(new THREE.LineSegments(edges,new THREE.LineBasicMaterial({color,transparent:true,opacity:isHub?0.3:0.22})));
-    const outerEdges=new THREE.EdgesGeometry(new THREE.SphereGeometry(base*1.5,4,4));
-    group.add(new THREE.LineSegments(outerEdges,new THREE.LineBasicMaterial({color:isHub?0xffaa33:0x44ccff,transparent:true,opacity:isHub?0.08:0.04})));
-  }
-
-  // 光环（移动端只保留 hub）
-  const ringCount = isHub ? (isMobile?2:3) : (isMobile?0:1);
-  for (let ri = 0; ri < ringCount; ri++) {
-    const r = base * (1.6 + ri * 0.5);
-    const pts = isMobile ? 32 : 64;
-    const geomKey = r.toFixed(3)+'_'+pts;
-    if(!window._ringGeomCache)window._ringGeomCache={};
-    if(!window._ringGeomCache[geomKey]){
-      const p=[];
-      for(let a=0;a<=pts;a++){const ang=a/pts*Math.PI*2;p.push(new THREE.Vector3(Math.cos(ang)*r,Math.sin(ang)*r,0))}
-      window._ringGeomCache[geomKey]=new THREE.BufferGeometry().setFromPoints(p);
-    }
-    group.add(new THREE.Line(
-      window._ringGeomCache[geomKey],
-      new THREE.LineBasicMaterial({color: isHub ? 0xffaa33 : 0x44ddff, transparent: true, opacity: isHub ? 0.12 : 0.07})
-    ));
-  }
-
-  // 轨道粒子（移动端减半）
-  const oc=isMobile?4:8+Math.floor(Math.random()*8);const op=[];
-  for(let i=0;i<oc;i++){const a=i/oc*Math.PI*2;const rd=base*1.6*.85;op.push(Math.cos(a)*rd,Math.sin(a)*rd,0)}
-  const ob=new THREE.BufferGeometry();ob.setAttribute('position',new THREE.Float32BufferAttribute(op,3));
-  const orb=new THREE.Points(ob,new THREE.PointsMaterial({color:isHub?0xffcc66:0x66eeff,size:isHub?0.03:0.02,transparent:true,opacity:.5,blending:THREE.NormalBlending}));group.add(orb);
-
-  return{group,wire,ring:group.children[group.children.length-2],orb,phase:Math.random()*Math.PI*2,baseSize:base,isHub};
-}
-
-function updateLabelPositions(){
-  const el=document.getElementById('scene-labels');
-
-  const labelSet=new Set();
-  if(!window._labelPool)window._labelPool={};
-
-  // 分类标签
-  const cats=getCategoryCenters();
-  cats.forEach(cat=>{
-    const key='cat_'+cat.name;labelSet.add(key);
-    let div=window._labelPool[key];
-    if(!div){div=document.createElement('div');div.className='slabel cat-label';el.appendChild(div);window._labelPool[key]=div}
-    div.textContent=cat.name;cat.div=div;
-  });
-  window._catLabels=cats;
-
-  // 节点标签
-  if(!window._nodeLabels)window._nodeLabels=[];
-  window._nodeLabels.forEach(nl=>{
-    const key='node_'+nl.nodeId;labelSet.add(key);
-    let div=window._labelPool[key];
-    if(!div){
-      div=document.createElement('div');div.className='slabel node-label'+(nl.isHub?' hub-label':'');
-      div.style.position='absolute';div.style.transform='translate(-50%,-50%)';
-      div.style.color=nl.isHub?'#fff':'rgba(255,255,255,0.9)';
-      div.style.background='none';div.style.border='none';div.style.borderRadius='0';
-      div.style.padding=nl.isHub?'8px 22px':'5px 14px';
-      div.style.fontFamily='Noto Sans SC,Microsoft YaHei,sans-serif';
-      div.style.fontWeight=nl.isHub?'700':'400';
-      div.style.textAlign='center';div.style.whiteSpace='pre-line';div.style.lineHeight='1.3';
-      div.style.textShadow='0 0 8px rgba(0,0,0,0.9), 0 0 4px rgba(0,0,0,0.9), 0 1px 3px rgba(0,0,0,0.9)';
-      div.style.pointerEvents='none';
-      el.appendChild(div);window._labelPool[key]=div;
-    }
-    div.textContent=nl.text;nl.div=div;
-  });
-  // Remove stale labels
-  Object.keys(window._labelPool).forEach(key=>{
-    if(!labelSet.has(key)){
-      if(window._labelPool[key].parentNode)window._labelPool[key].parentNode.removeChild(window._labelPool[key]);
-      delete window._labelPool[key];
-    }
-  });
-}
-
-function getCategoryCenters(){
-  const items=load().map(migrate);
-  if(!items.length)return[];
-  const posMap={};
-  items.forEach(item=>{const p=_positions[item.id];if(p)posMap[item.id]=p});
-  const groups={};
-  items.forEach(item=>{
-    const cat=item.category||'未分类';
-    const p=posMap[item.id];if(!p)return;
-    if(!groups[cat])groups[cat]={x:0,y:0,z:0,count:0};
-    groups[cat].x+=p.x;groups[cat].y+=p.y;groups[cat].z+=p.z;groups[cat].count++;
-  });
-  return Object.keys(groups).map(name=>{const g=groups[name];return{name,x:g.x/g.count,y:g.y/g.count+.15,z:g.z/g.count}});
-}
-
-let _positions={};
-
-// ===== 分类选择器 =====
+// ===== 星系选择器 =====
 function populateGalaxySelector(){
   const sel=document.getElementById('galaxySelector');
   if(!sel)return;
@@ -1743,317 +1611,181 @@ function populateGalaxySelector(){
   });
 }
 
-// ===== 相机聚焦（一次性过渡，不限制后续旋转） =====
-function focusOnGalaxy(categoryName){
-  const items=load();
-  const catItems=items.filter(i=>(i.category||'未分类')===categoryName);
-  if(!catItems.length)return;
-  let cx=0,cy=0,cz=0,count=0;
-  catItems.forEach(item=>{const p=_positions[item.id];if(p){cx+=p.x;cy+=p.y;cz+=p.z;count++}});
-  if(!count)return;
-  const tx=cx/count,ty=cy/count,tz=cz/count;
-  // 一次性设置相机目标和位置，之后用户可自由旋转
-  controls.target.set(tx,ty,tz);
-  camera.position.set(tx+tx*.3,ty+1.5,tz+tz*.3+4);
-  controls.update();
-  _isFocused=true;
-  document.getElementById('btnResetGalaxy').classList.add('show');
-  const sel=document.getElementById('galaxySelector');
-  if(sel){sel.value=categoryName}
-}
+// ---- Mind Map Render ----
+function rebuild() {
+  const mm = document.getElementById('mindmap');
+  if (!mm) return;
+  const linesEl = document.getElementById('mm-lines');
+  const nodesEl = document.getElementById('mm-nodes');
+  if (!linesEl || !nodesEl) return;
+  linesEl.innerHTML = ''; nodesEl.innerHTML = '';
 
-function resetCamera(){
-  _isFocused=false;
-  // 回到全局视角
-  controls.target.set(0,0,0);
-  camera.position.set(0,0,8);
-  controls.update();
-  document.getElementById('btnResetGalaxy').classList.remove('show');
-  const sel=document.getElementById('galaxySelector');
-  if(sel)sel.value='__all__';
-}
+  const items = load().map(migrate);
+  const data = getGraphData();
+  if (!data.nodes.length) { document.getElementById('hudStatus').textContent = 'AWAITING INPUT'; upStats(); return; }
 
-function rebuild(){
-  while(nodeGroup.children.length)nodeGroup.remove(nodeGroup.children[0]);
-  if(linkLines){scene.remove(linkLines);linkLines=null}
-  if(linkGroup){scene.remove(linkGroup);linkGroup=null}
-  if(linkGlowLines){scene.remove(linkGlowLines);linkGlowLines=null}
-  allMeshes=[];
+  _positions = computePositions(items);
+  const ox = Math.max(innerWidth / 3, 200);
+  const oy = innerHeight / 2;
 
-  const items=load().map(migrate);
-  const data=getGraphData();
+  data.nodes.forEach(node => {
+    const p = _positions[node.id];
+    if (!p) return;
+    const isHub = node.isVirtualHub === true;
+    const el = document.createElement('div');
+    el.className = 'mm-node' + (isHub ? ' hub' : '');
+    el.style.left = (p.x + ox) + 'px';
+    el.style.top = (p.y + oy) + 'px';
+    el.textContent = isHub ? (node.title || '未分类') : (node.title || '').slice(0, 28);
+    if (!isHub && node.summary) el.title = node.summary;
 
-  if(!data.nodes.length){document.getElementById('hudStatus').textContent='AWAITING INPUT';upStats();return}
-
-  _positions=computePositions(items);
-
-  // Compute depth level for each node (for sizing, max 3, cycle-safe)
-  const _levelCache={};
-  function getLevel(nodeId,depth){
-    depth=depth||0;
-    if(depth>10)return 1; // cycle guard
-    if(_levelCache[nodeId]!==undefined)return _levelCache[nodeId];
-    const item=items.find(x=>x.id===nodeId);
-    if(!item||!item.parentId){_levelCache[nodeId]=1;return 1}
-    const l=1+getLevel(item.parentId,depth+1);
-    _levelCache[nodeId]=Math.min(3,l);
-    return _levelCache[nodeId];
-  }
-
-  // 渲染节点（虚拟 Hub 用金色大球，子节点按层级大小）
-  window._nodeLabels=[];
-  data.nodes.forEach((node,i)=>{
-    const pos=_positions[node.id]||{x:(Math.random()-.5)*3,y:(Math.random()-.5)*2,z:(Math.random()-.5)*3};
-    const isHub=node.isVirtualHub===true;
-    const catName=node.category||'未分类';
-    const level=isHub?0:Math.min(3,getLevel(node.id));
-    const h=createHoloSphere(pos,node,i,data.nodes.length,isHub,catName,level);
-    nodeGroup.add(h.group);
-
-    // 标签数据收集
-    let labelText;
-    if(isHub){
-      labelText=catName.length>5?catName.slice(0,5)+'…':catName;
-    } else {
-      const t=(node.title||'').slice(0,18);
-      const chunks=[];
-      for(let ci=0;ci<t.length;ci+=6)chunks.push(t.slice(ci,ci+6));
-      labelText=chunks.join('\n');
-    }
-    _nodeLabels.push({pos:new THREE.Vector3(pos.x,pos.y,pos.z), text:labelText, isHub, category:catName, nodeId:node.id, baseSize:h.baseSize, level});
-    allMeshes.push({group:h.group, nodeId:node.id, data:h, isHub, category:catName, isVirtualHub:isHub});
-  });
-
-    // 连线
-    if(data.links.length){
-    linkGroup=new THREE.Group();scene.add(linkGroup);
-    const glowPos=[];const glowColors=[];
-    const uiHex=getTheme('ui_color','#00ccff');
-    const r=parseInt(uiHex.slice(1,3),16)/255,g=parseInt(uiHex.slice(3,5),16)/255,b=parseInt(uiHex.slice(5,7),16)/255;
-
-    data.links.forEach(link=>{
-      const s=allMeshes.find(m=>m.nodeId===link.source);
-      const t=allMeshes.find(m=>m.nodeId===link.target);
-      if(!s||!t)return;
-      const p1=s.group.position,p2=t.group.position;
-      const thickness=.003+(link.strength||.2)*.008;
-      const isHubLink = s.isHub || t.isHub;
-      const linkColor = isHubLink ? new THREE.Color('#ffaa44') : new THREE.Color(uiHex);
-      const linkGroupObj=createThickLink(p1,p2,linkColor,Math.min(thickness,.015));
-      if(linkGroupObj){linkGroupObj.userData.linkInfo={source:link.source,target:link.target};linkGroup.add(linkGroupObj)}
-      if(!isMobile){
-        glowPos.push(p1.x,p1.y,p1.z,p2.x,p2.y,p2.z);
-        const cr=isHubLink?0.8:r,cg=isHubLink?0.55:g,cb=isHubLink?0.1:b;
-        glowColors.push(cr,cg,cb,cr*.35,cg*.35,cb*.35);
-      }
+    el.addEventListener('click', () => {
+      if (isHub) showCategoryOverview(node.category);
+      else showD(typeof node.id === 'string' && node.id.startsWith('__hub__') ? node.id : Number(node.id));
     });
-
-    if(glowPos.length&&!isMobile){
-      const gg=new THREE.BufferGeometry();
-      gg.setAttribute('position',new THREE.Float32BufferAttribute(glowPos,3));
-      gg.setAttribute('color',new THREE.Float32BufferAttribute(glowColors,3));
-      linkGlowLines=new THREE.LineSegments(gg,new THREE.LineBasicMaterial({vertexColors:true,transparent:true,opacity:.08,blending:THREE.NormalBlending,depthWrite:false}));
-      scene.add(linkGlowLines);
-    }
-  }
-
-  document.getElementById('hudStatus').textContent=`SYSTEM ACTIVE · ${data.nodes.length} NODES`;
-  upStats();
-  updateLabelPositions();
-  populateGalaxySelector();
-
-  // 点击检测（共用 raycasting）
-  const rc=new THREE.Raycaster(),ms=new THREE.Vector2();
-  function _hitNode(ev){
-    const rect=renderer.domElement.getBoundingClientRect();
-    ms.x=((ev.clientX-rect.left)/rect.width)*2-1;
-    ms.y=-((ev.clientY-rect.top)/rect.height)*2+1;
-    rc.setFromCamera(ms,camera);
-    const targets=allMeshes.map(m=>{
-      const spheres=m.group.children.filter(c=>c.type==='Mesh'&&c.geometry&&c.geometry.type==='SphereGeometry');
-      return{mesh:spheres[0],data:m};
-    }).filter(t=>t.mesh);
-    const hits=rc.intersectObjects(targets.map(t=>t.mesh));
-    if(hits.length){
-      const found=targets.find(t=>t.mesh===hits[0].object);
-      return found?found.data:null;
-    }
-    return null;
-  }
-
-  renderer.domElement.onclick=(ev)=>{
-    if (ev.button !== 0) return;
-    const m = _hitNode(ev);
-    if (!m) return;
-    if (m.isVirtualHub) showCategoryOverview(m.category);
-    else showD(m.nodeId);
-  };
-
-  // 右键菜单 setup (runs once)
-  if(!window._ctxListenersInstalled){
-    window._ctxListenersInstalled=true;
-    window._ctxNodeId = null;
-    window.hideCtx = function(){ document.getElementById('ctxMenu').classList.remove('show'); window._ctxNodeId = null; };
-    renderer.domElement.addEventListener('contextmenu', ev => {
+    el.addEventListener('contextmenu', (ev) => {
       ev.preventDefault();
-      const m = window._hitNodeFn ? window._hitNodeFn(ev) : null;
-      if (!m) { window.hideCtx(); return; }
-      window._ctxNodeId = m.nodeId;
-      window._ctxIsHub = m.isVirtualHub||false;
-      const addChildEl=document.querySelector('#ctxMenu .ctx-item[data-action="addChild"]');
-      if(addChildEl)addChildEl.style.display=m.isVirtualHub?'none':'';
+      window._ctxNodeId = typeof node.id === 'string' && node.id.startsWith('__hub__') ? node.id : Number(node.id);
+      window._ctxIsHub = isHub;
+      const addEl = document.querySelector('#ctxMenu .ctx-item[data-action="addChild"]');
+      if (addEl) addEl.style.display = isHub ? 'none' : '';
       const menu = document.getElementById('ctxMenu');
       menu.style.left = ev.clientX + 'px'; menu.style.top = ev.clientY + 'px';
-      const mw = menu.offsetWidth || 160, mh = menu.offsetHeight || 130;
-      if (ev.clientX + mw > innerWidth) menu.style.left = (ev.clientX - mw) + 'px';
-      if (ev.clientY + mh > innerHeight) menu.style.top = (ev.clientY - mh) + 'px';
       menu.classList.add('show');
     });
-    document.addEventListener('click', ev => {
-      if (!document.getElementById('ctxMenu').contains(ev.target)) window.hideCtx();
-    });
-  }
-  window._hitNodeFn = _hitNode;
-}
-
-// ===== 动画循环 =====
-let _animFrame=0;
-const ANIM_SKIP=isMobile?3:1;
-function animate(){
-  requestAnimationFrame(animate);
-  _animFrame++;
-  const skipThisFrame=_animFrame%ANIM_SKIP!==0;
-  const t=clock.getElapsedTime();
-
-  // 星星闪烁（可以每帧做，很轻量）
-  if(!skipThisFrame||_animFrame<5){
-  stars.material.opacity=.7+Math.sin(t*.4)*.2+Math.sin(t*.8+.5)*.1;
-  starField.rotation.y=t*.002;
-  starField.rotation.x=Math.sin(t*.0008)*.015;
-  }
-
-  // 全息闪烁和轨道粒子（移动端跳帧）
-  if(!skipThisFrame){
-  allMeshes.forEach((m,i)=>{
-    const d=m.data;
-    const f=.5+Math.sin(t*1.5+d.phase)*.25+Math.sin(t*3+d.phase+.5)*.15;
-    if(d.wire)d.wire.material.opacity=.05+f*.1;
-    if(d.ring){d.ring.rotation.x=Math.sin(t*.6+d.phase)*.4;d.ring.rotation.z=t*.5+d.phase}
-    if(d.orb){
-      const c=d.orb.geometry.attributes.position.count;
-      const p=d.orb.geometry.attributes.position.array;
-      const rr=d.baseSize*1.6*.85;
-      for(let j=0;j<c;j++){const a=j/c*Math.PI*2+t*(.4+(i%5)*.03)+d.phase;p[j*3]=Math.cos(a)*rr;p[j*3+1]=Math.sin(a)*rr}
-      d.orb.geometry.attributes.position.needsUpdate=true;
-    }
-    d.group.scale.setScalar(1+Math.sin(t*1.2+d.phase)*.015);
+    nodesEl.appendChild(el);
   });
-  }
 
-  // 圆柱连线脉冲（跳帧且跳过非 hub 连线）
-  if(!skipThisFrame&&linkGroup){
-    linkGroup.children.forEach((g,gi)=>{
-      g.children.forEach(child=>{
-        if(child.isMesh){
-          if(child.userData.isGlow)child.material.opacity=.04+Math.sin(t*1.8+gi*.5)*.03;
-          else child.material.opacity=.28+Math.sin(t*1.2+gi*.4)*.14;
-        }
-      });
-    });
-  }
-  // 辉光线闪烁
-  if(linkGlowLines&&!skipThisFrame)linkGlowLines.material.opacity=.06+Math.sin(t*1.8)*.05;
+  data.links.forEach(link => {
+    const sp = _positions[link.source], tp = _positions[link.target];
+    if (!sp || !tp) return;
+    const isHubLink = String(link.source).startsWith('__hub__') || String(link.target).startsWith('__hub__');
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const mx = (sp.x + tp.x) / 2;
+    path.setAttribute('d', `M${sp.x+ox},${sp.y+oy} Q${mx+ox},${sp.y+oy} ${mx+ox},${(sp.y+tp.y)/2+oy} Q${mx+ox},${tp.y+oy} ${tp.x+ox},${tp.y+oy}`);
+    path.style.stroke = isHubLink ? 'rgba(255,200,80,0.15)' : 'rgba(255,255,255,0.07)';
+    path.style.strokeWidth = isHubLink ? '2' : '1.5';
+    linesEl.appendChild(path);
+  });
 
-
-  controls.update();
-
-  // 更新分类与节点标签屏幕位置（移动端每3帧更新，桌面每2帧）
-  const labelSkip = isMobile ? 3 : 2;
-  if (!window._labelFrame) window._labelFrame = 0;
-  window._labelFrame++;
-  if (window._labelFrame % labelSkip === 0) {
-  const w2=innerWidth/2,h2=innerHeight/2;
-  if(window._catLabels){
-    window._catLabels.forEach(cat=>{
-      if(!cat.div)return;
-      const v=new THREE.Vector3(cat.x,cat.y,cat.z);
-      v.project(camera);
-      if(v.z>1||v.z<-2){cat.div.style.opacity='0';return}
-      const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
-      if(x<-200||x>innerWidth+200||y<-200||y>innerHeight+200){cat.div.style.opacity='0';return}
-      cat.div.style.transform='translate3d('+x+'px,'+y+'px,0) translate(-50%,-50%)';cat.div.style.opacity=Math.max(.05,Math.min(1,1-Math.abs(v.z)*1.5))
-    });
-  }
-  if(window._nodeLabels){
-    window._nodeLabels.forEach(nl=>{
-      if(!nl.div)return;
-      const v=new THREE.Vector3(nl.pos.x,nl.pos.y,nl.pos.z);
-      v.project(camera);
-      if(v.z<1){
-        const x=(v.x*w2)+w2,y=-(v.y*h2)+h2;
-        if(x<-200||x>innerWidth+200||y<-200||y>innerHeight+200){nl.div.style.display='none';return}
-        const dist=camera.position.distanceTo(new THREE.Vector3(nl.pos.x,nl.pos.y,nl.pos.z));
-        nl.div.style.transform='translate3d('+x+'px,'+y+'px,0) translate(-50%,-50%)';
-        if(!nl._lastDist||Math.abs(dist-nl._lastDist)/nl._lastDist>.15){
-          const baseScale=nl.isHub?420:160;
-          const fs=Math.max(nl.isHub?14:9,Math.min(nl.isHub?80:28,baseScale/dist));
-          nl.div.style.fontSize=fs+'px';
-          nl.div.style.maxWidth=Math.max(36,(nl.baseSize*2.4)/dist*h2)+'px';
-          nl._lastDist=dist;
-        }
-        const op=Math.max(.3,Math.min(1,4/dist));
-        if(!nl._lastOp||Math.abs(op-nl._lastOp)>.08){nl.div.style.opacity=op;nl._lastOp=op}
-        nl.div.style.display='';
-      }else{nl.div.style.display='none'}
-    });
-  }
-  }
-
-  renderer.render(scene,camera);
+  document.getElementById('hudStatus').textContent = `SYSTEM ACTIVE · ${data.nodes.length} NODES`;
+  upStats(); populateGalaxySelector();
 }
 
-// ===== 自适应（防抖）=====
-let _resizeTimer;
-onresize=()=>{clearTimeout(_resizeTimer);_resizeTimer=setTimeout(()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)},150)};
+// ---- Pan / Focus ----
+function setupPanZoom() {
+  const mm = document.getElementById('mindmap');
+  if (!mm) return;
 
-// ===== 启动 =====
+  mm.addEventListener('mousedown', (ev) => {
+    if (ev.button !== 0) return;
+    if (ev.target.closest('.mm-node')) return;
+    _isDragging = true;
+    _dragSX = ev.clientX; _dragSY = ev.clientY;
+    _dragPX = _panX; _dragPY = _panY;
+    mm.classList.add('dragging');
+  });
+
+  document.addEventListener('mousemove', (ev) => {
+    if (!_isDragging) return;
+    _panX = _dragPX + (ev.clientX - _dragSX);
+    _panY = _dragPY + (ev.clientY - _dragSY);
+    mm.style.transform = `translate(${_panX}px, ${_panY}px)`;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (_isDragging) { _isDragging = false; document.getElementById('mindmap')?.classList.remove('dragging'); }
+  });
+
+  // Touch pan
+  mm.addEventListener('touchstart', (ev) => {
+    if (ev.touches.length === 1 && !ev.target.closest('.mm-node')) {
+      _isDragging = true;
+      _dragSX = ev.touches[0].clientX; _dragSY = ev.touches[0].clientY;
+      _dragPX = _panX; _dragPY = _panY;
+    }
+  }, { passive: true });
+  mm.addEventListener('touchmove', (ev) => {
+    if (_isDragging && ev.touches.length === 1) {
+      _panX = _dragPX + (ev.touches[0].clientX - _dragSX);
+      _panY = _dragPY + (ev.touches[0].clientY - _dragSY);
+      mm.style.transform = `translate(${_panX}px, ${_panY}px)`;
+    }
+  }, { passive: true });
+  mm.addEventListener('touchend', () => { _isDragging = false; }, { passive: true });
+
+  // One-time context menu listener
+  if (!window._ctxListenersInstalled) {
+    window._ctxListenersInstalled = true;
+    window._ctxNodeId = null;
+    window.hideCtx = () => { document.getElementById('ctxMenu').classList.remove('show'); window._ctxNodeId = null; };
+    document.addEventListener('click', (ev) => { if (!document.getElementById('ctxMenu')?.contains(ev.target)) window.hideCtx(); });
+  }
+}
+
+function focusOnGalaxy(catName) {
+  const p = _positions['__hub__' + catName];
+  if (!p) return;
+  _panX = -(p.x + Math.max(innerWidth / 3, 200)) + innerWidth / 3;
+  _panY = -(p.y + innerHeight / 2) + innerHeight / 2;
+  const mm = document.getElementById('mindmap');
+  if (mm) mm.style.transform = `translate(${_panX}px, ${_panY}px)`;
+  document.getElementById('btnResetGalaxy').classList.add('show');
+  const sel = document.getElementById('galaxySelector');
+  if (sel) sel.value = catName;
+}
+
+function resetCamera() {
+  _panX = 0; _panY = 0;
+  const mm = document.getElementById('mindmap');
+  if (mm) mm.style.transform = '';
+  document.getElementById('btnResetGalaxy').classList.remove('show');
+  const sel = document.getElementById('galaxySelector');
+  if (sel) sel.value = '__all__';
+}
+
+// ---- Animation Loop ----
+function animate(t) { requestAnimationFrame(animate); if (window._sfDraw) window._sfDraw((t || 0) / 1000); }
+
+// ---- Init ----
 (async function boot(){
   await initData();
-  try{
-    const s=loadAK();if(s)document.getElementById('ipt-apikey').value=s;
-    const ast=document.getElementById('apikeyStatus');
-    if(ast){ast.textContent=s?'✅ 已保存（仅本地设备）':'⚠️ 未配置（AI 功能不可用）';ast.style.color=s?'rgba(0,255,150,.5)':'rgba(255,255,255,.2)'}
-    const uiColor=getTheme('ui_color','#00ccff');
+  try {
+    const s = loadAK(); if (s) document.getElementById('ipt-apikey').value = s;
+    const ast = document.getElementById('apikeyStatus');
+    if (ast) { ast.textContent = s ? '✅ 已保存（仅本地设备）' : '⚠️ 未配置（AI 功能不可用）'; ast.style.color = s ? 'rgba(0,255,150,.5)' : 'rgba(255,255,255,.2)'; }
+    const uiColor = getTheme('ui_color', '#00ccff');
     applyUITheme(uiColor);
-    const sc=document.getElementById('ipt-sphere-color');if(sc)sc.value=getTheme('sphere_color','#00ccff');
-    const uc=document.getElementById('ipt-ui-color');if(uc)uc.value=uiColor;
-  }catch(e){console.log(e)}
+    const sc = document.getElementById('ipt-sphere-color'); if (sc) sc.value = getTheme('sphere_color', '#00ccff');
+    const uc = document.getElementById('ipt-ui-color'); if (uc) uc.value = uiColor;
+  } catch(e) { console.log(e); }
   rebuild();
-    setTimeout(()=>document.getElementById('loading').classList.add('hidden'),600);
+  setupPanZoom();
+  setTimeout(() => document.getElementById('loading')?.classList.add('hidden'), 600);
 })();
 
-document.getElementById('ipt-apikey')?.addEventListener('input',function(){
-  const val=this.value.trim();
+document.getElementById('ipt-apikey')?.addEventListener('input', function() {
+  const val = this.value.trim();
   saveAK(val);
-  const st=document.getElementById('apikeyStatus');
-  if(st){
-    if(val){st.textContent='✅ 已保存（仅本地设备）';st.style.color='rgba(0,255,150,.5)'}
-    else{st.textContent='⚠️ 未配置（AI 功能不可用）';st.style.color='rgba(255,255,255,.2)'}
+  const st = document.getElementById('apikeyStatus');
+  if (st) {
+    if (val) { st.textContent = '✅ 已保存（仅本地设备）'; st.style.color = 'rgba(0,255,150,.5)'; }
+    else { st.textContent = '⚠️ 未配置（AI 功能不可用）'; st.style.color = 'rgba(255,255,255,.2)'; }
   }
 });
-document.getElementById('ipt-sphere-color')?.addEventListener('input',function(){
-  const v=this.value;setTheme('sphere_color',v);
-  document.getElementById('sphereColorVal').textContent=v;rebuild();
+document.getElementById('ipt-sphere-color')?.addEventListener('input', function() {
+  const v = this.value; setTheme('sphere_color', v);
+  document.getElementById('sphereColorVal').textContent = v; rebuild();
 });
-document.getElementById('ipt-ui-color')?.addEventListener('input',function(){
-  const v=this.value;setTheme('ui_color',v);
-  document.getElementById('uiColorVal').textContent=v;applyUITheme(v);rebuild();
+document.getElementById('ipt-ui-color')?.addEventListener('input', function() {
+  const v = this.value; setTheme('ui_color', v);
+  document.getElementById('uiColorVal').textContent = v; applyUITheme(v); rebuild();
 });
-document.getElementById('galaxySelector')?.addEventListener('change',function(){
-  if(this.value==='__all__')resetCamera();else focusOnGalaxy(this.value);
+document.getElementById('galaxySelector')?.addEventListener('change', function() {
+  if (this.value === '__all__') resetCamera(); else focusOnGalaxy(this.value);
 });
 
-animate();
+animate(0);
 </script>
 </body>
 </html>
